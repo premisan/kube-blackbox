@@ -1,145 +1,187 @@
 # Kube-Pinger (Pod Restart Observer)
 
-쿠버네티스 파드의 재시작(`restartCount` 증가)을 실시간으로 감지하고, **종료 상태(LastTerminationState)**, **쿠버네티스 이벤트(Events)**, **직전 컨테이너 로그(Previous Logs)**를 교차 분석하여 근본 원인을 진단한 뒤 `PodRestartHistory` CRD로 자동 기록하는 쿠버네티스 컨트롤러입니다.
+[![Docker Hub](https://img.shields.io/docker/pulls/premisan0/kube-pinger?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/premisan0/kube-pinger)
+[![Go Report Card](https://goreportcard.com/badge/github.com/premisan/kube-pinger)](https://goreportcard.com/report/github.com/premisan/kube-pinger)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-이제 파드가 재시작되었을 때 여러 `kubectl` 명령어와 과거 로그를 일일이 뒤질 필요 없이, `kubectl get prh` 명령어로 재시작 원인을 한 번에 파악할 수 있습니다.
+> [한국어 (Korean Version)](README.ko.md)
+
+**Kube-Pinger** is a lightweight Kubernetes controller that monitors pod restarts in real time, automatically deduces root causes via rule-based heuristics across **LastTerminationState**, **Kubelet Events**, and **Previous Container Logs**, and records the diagnosis directly into a custom resource (`PodRestartHistory`).
+
+Stop digging through past logs and multiple `kubectl` commands. Simply run `kubectl get prh` to see why your pods restarted.
 
 ---
 
-## 1. 아키텍처 및 진단 파이프라인
+## 1. Diagnostic Pipeline & Architecture
 
 ```text
-[파드 재시작 감지 (restartCount 증가)]
+[Pod Restart Detected (restartCount increased)]
        │
        ▼
-1. LastTerminationState 분석
+1. LastTerminationState Inspection
    ├── reason == OOMKilled ─────────────────► [OOMKilled (Confidence: High)]
    └── exitCode in (126, 127) ──────────────► [PermissionDenied / CommandNotFound]
        │
        ▼
-2. 최근 K8s Events 교차 대조 (Probe, Node Eviction, Preemption)
+2. Recent K8s Events Cross-Check (Probe, Node Eviction, Preemption)
    ├── Liveness / Startup Probe Failed ─────► [LivenessProbeFailure / StartupProbeFailure]
    ├── Evicted / Node low on resource ──────► [NodeEviction]
-   └── Preempted by other pod ──────────────► [Preempted]
+   └── Preempted by higher priority pod ────► [Preempted]
        │
        ▼
-3. Previous Container Logs 정규식 패턴 분석 (Tail 100 lines)
+3. Previous Container Logs Regex Pattern Matching (Tail 100 lines)
    ├── Go panic / JVM OutOfMemoryError ─────► [AppPanic / JVMOOM]
    ├── Address already in use ──────────────► [PortConflict]
    ├── Fatal error / SIGSEGV ───────────────► [AppFatalError / SegmentationFault]
    └── Unhandled Exception (Python, Node) ──► [AppUnhandledException]
        │
        ▼
-4. Fallback (ExitCode 기반 휴리스틱 매핑)
+4. Fallback Heuristic (ExitCode Mapping)
    └── 137(Sigkill), 143(Sigterm), 139(Sigsegv), 1(RuntimeError), 0(ExitedNormally)
        │
        ▼
-[PodRestartHistory CRD 생성 및 상태 기록]
+[Create / Update PodRestartHistory CRD]
 ```
 
 ---
 
-## 2. 프로젝트 구조
+## 2. Project Structure
 
 ```text
 kube-pinger/
 ├── api/
 │   └── v1alpha1/
 │       ├── groupversion_info.go
-│       └── podrestarthistory_types.go          # Go CRD 정의
+│       └── podrestarthistory_types.go          # Go CRD struct definition
 ├── config/
 │   ├── crd/
 │   │   └── bases/
-│   │       └── observer.io_podrestarthistories.yaml # CRD YAML
+│   │       └── observer.io_podrestarthistories.yaml # CRD YAML manifest
+│   ├── deploy/
+│   │   └── deploy.yaml                         # All-in-one deployment (Namespace, RBAC, Deployment)
 │   └── rbac/
-│       └── rbac.yaml                           # RBAC 매니페스트
+│       └── rbac.yaml                           # RBAC manifests
 ├── pkg/
-│   ├── analyzer/                               # 규칙 기반 진단 엔진
+│   ├── analyzer/                               # Rule-based diagnostic engine
 │   │   ├── analyzer.go
 │   │   ├── analyzer_test.go
-│   │   ├── events.go                           # 이벤트 교차 검증
-│   │   └── log_patterns.go                     # 이전 로그 정규식 패턴
+│   │   ├── events.go                           # Event correlation & filtering
+│   │   └── log_patterns.go                     # Previous log regex rules
 │   └── controller/
 │       ├── pod_controller.go                   # Pod Watcher & Reconciler
 │       └── pod_controller_test.go
-├── samples/                                    # 테스트용 재시작 샘플 파드 3종
-│   ├── 01-oomkilled.yaml                       # OOMKilled 유발
-│   ├── 02-liveness-probe-failure.yaml          # Liveness Probe 실패 유발
-│   └── 03-app-panic.yaml                       # Go 런타임 패닉 크래시 유발
+├── samples/                                    # Sample crash pods for testing
+│   ├── 01-oomkilled.yaml                       # Triggers cgroup OOMKilled
+│   ├── 02-liveness-probe-failure.yaml          # Triggers Liveness Probe failure
+│   └── 03-app-panic.yaml                       # Triggers Go runtime panic
+├── .dockerignore
 ├── Dockerfile
 ├── Makefile
 ├── go.mod
 ├── go.sum
-└── main.go                                     # 컨트롤러 진입점
+└── main.go                                     # Controller entrypoint
 ```
 
 ---
 
-## 3. 로컬 클러스터에서 테스트하기
+## 3. Kubernetes Deployment Guide
 
-### 1단계: CRD 등록
+The official container image `premisan0/kube-pinger:latest` supports multi-architecture (`linux/amd64` and `linux/arm64`). You can deploy it to any Kubernetes cluster (AWS EKS, GKE, Docker Desktop, kind, k3s, minikube) without building locally.
+
+### Step 1: Install CRD
 ```bash
-kubectl apply -f config/crd/bases/observer.io_podrestarthistories.yaml
+kubectl apply -f https://raw.githubusercontent.com/premisan/kube-pinger/main/config/crd/bases/observer.io_podrestarthistories.yaml
+# Or with local clone:
+# kubectl apply -f config/crd/bases/observer.io_podrestarthistories.yaml
 ```
 
-### 2단계: 컨트롤러 배포 또는 로컬 실행
-
-#### 방법 A: 쿠버네티스 클러스터에 직접 배포 (권장)
-컨트롤러를 `kube-pinger-system` 네임스페이스의 Deployment 파드로 배포합니다.
+### Step 2: Deploy Controller
+Deploys `kube-pinger-system` namespace, RBAC permissions, and the controller deployment:
 ```bash
-# 1) Docker 이미지 빌드
-docker build -t premisan0/kube-pinger:latest .
+kubectl apply -f https://raw.githubusercontent.com/premisan/kube-pinger/main/config/deploy/deploy.yaml
+# Or with local clone:
+# kubectl apply -f config/deploy/deploy.yaml
+```
 
-# 2) 네임스페이스, RBAC, Deployment 한 번에 배포
-kubectl apply -f config/deploy/deploy.yaml
-
-# 배포 상태 확인
+### Step 3: Verify Controller Status
+```bash
 kubectl get pods -n kube-pinger-system
 ```
+*Example Output:*
+```text
+NAME                                             READY   STATUS    RESTARTS   AGE
+kube-pinger-controller-manager-5f7bbd747d-abc12   1/1     Running   0          20s
+```
 
-#### 방법 B: 로컬 프로세스로 개발 실행
+Check real-time controller logs:
 ```bash
+kubectl logs -f deployment/kube-pinger-controller-manager -n kube-pinger-system
+```
+
+---
+
+## 4. Local Development (Optional)
+
+You can also run Kube-Pinger as a local Go process targeting your current kubeconfig context:
+
+```bash
+# 1) Register CRD
+kubectl apply -f config/crd/bases/observer.io_podrestarthistories.yaml
+
+# 2) Run controller locally
 go run main.go
 ```
 
-### 3단계: 샘플 테스트 파드 배포
-새 터미널을 열고 재시작을 유발하는 파드 3종을 배포합니다.
+To build container images locally:
 ```bash
-# 1) OOMKilled 파드 배포 (메모리 리밋 30Mi 초과 유발)
+# Local image build
+docker build -t premisan0/kube-pinger:latest .
+
+# Multi-arch image build via buildx
+docker buildx build --platform linux/amd64,linux/arm64 -t premisan0/kube-pinger:latest --push .
+```
+
+---
+
+## 5. Testing & Verification
+
+Deploy 3 sample pods to test different restart failure scenarios:
+
+### 1) Deploy Sample Pods
+```bash
+# 1) OOMKilled Pod (Allocates 50MB against 30Mi limit)
 kubectl apply -f samples/01-oomkilled.yaml
 
-# 2) Liveness Probe 실패 파드 배포 (8초 후 헬스체크 파일 삭제)
+# 2) Liveness Probe Failure Pod (Removes /tmp/healthy after 8 seconds)
 kubectl apply -f samples/02-liveness-probe-failure.yaml
 
-# 3) App Panic 크래시 파드 배포 (Go 패닉 스택 트레이스 출력 후 크래시)
+# 3) App Panic Pod (Go runtime panic stack trace on stderr)
 kubectl apply -f samples/03-app-panic.yaml
 ```
 
-### 4단계: 진단 결과 확인
-
-#### 목록 요약 보기 (`kubectl get prh`)
-`additionalPrinterColumns`가 설정되어 있어 주요 진단 결과가 한눈에 표시됩니다.
-클러스터 전체 네임스페이스(예: kube-system 등)의 재시작 히스토리를 보려면 `-A` 옵션을 사용합니다:
+### 2) Monitor Restart Diagnoses (`kubectl get prh`)
+`additionalPrinterColumns` formats the output so root causes and exit codes are visible immediately:
 ```bash
+# View across all namespaces (including kube-system)
 kubectl get prh -A -w
-```
-또는 현재 네임스페이스(default)만 조회:
-```bash
+
+# Or view default namespace
 kubectl get prh -w
 ```
-출력 예시:
+
+*Example Output:*
 ```text
-NAME                                         POD                      CONTAINER         COUNT   ROOTCAUSE              CONFIDENCE   EXITCODE   AGE
-sample-oomkilled-memory-eater-restart-1       sample-oomkilled         memory-eater      1       OOMKilled              High         137        15s
-sample-liveness-failure-web-probe-restart-1  sample-liveness-failure  web-probe         1       LivenessProbeFailure   High         137        10s
-sample-app-panic-backend-service-restart-1   sample-app-panic         backend-service   1       AppPanic               High         2          5s
+NAMESPACE   NAME                                         POD                      CONTAINER         COUNT   ROOTCAUSE              CONFIDENCE   EXITCODE   AGE
+default     sample-oomkilled-memory-eater-restart-1       sample-oomkilled         memory-eater      1       OOMKilled              High         137        15s
+default     sample-liveness-failure-web-probe-restart-1  sample-liveness-failure  web-probe         1       LivenessProbeFailure   High         137        10s
+default     sample-app-panic-backend-service-restart-1   sample-app-panic         backend-service   1       AppPanic               High         2          5s
 ```
 
-#### 상세 증거 확인 (`kubectl describe prh <name>`)
+### 3) Inspect Diagnostic Evidence (`kubectl describe prh <name>`)
 ```bash
 kubectl describe prh sample-liveness-failure-web-probe-restart-1
 ```
-출력 예시:
+*Example Output:*
 ```yaml
 Spec:
   Container Name:  web-probe
@@ -160,7 +202,21 @@ Status:
 
 ---
 
-## 4. 테스트 정리
+## 6. Cleanup
+
 ```bash
+# Remove sample pods
 make delete-samples
+
+# Remove controller deployment and RBAC
+kubectl delete -f config/deploy/deploy.yaml
+
+# Remove CRD (optional)
+kubectl delete -f config/crd/bases/observer.io_podrestarthistories.yaml
 ```
+
+---
+
+## 7. License
+
+Distributed under the MIT License. See `LICENSE` for more information.
