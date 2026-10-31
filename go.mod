@@ -1,6 +1,6 @@
 module github.com/premisan/kube-pinger
 
-go 1.26.7
+go 1.22.0
 
 require (
 	k8s.io/api v0.30.3

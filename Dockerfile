@@ -1,5 +1,7 @@
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS builder
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /workspace
 COPY go.mod go.sum ./
@@ -9,7 +11,7 @@ COPY main.go main.go
 COPY api/ api/
 COPY pkg/ pkg/
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -o manager main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -a -o manager main.go
 
 # Runtime stage
 FROM alpine:3.19

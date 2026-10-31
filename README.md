@@ -82,12 +82,25 @@ kube-pinger/
 kubectl apply -f config/crd/bases/observer.io_podrestarthistories.yaml
 ```
 
-### 2단계: 컨트롤러 실행
-로컬 개발 환경에서 직접 실행:
+### 2단계: 컨트롤러 배포 또는 로컬 실행
+
+#### 방법 A: 쿠버네티스 클러스터에 직접 배포 (권장)
+컨트롤러를 `kube-pinger-system` 네임스페이스의 Deployment 파드로 배포합니다.
+```bash
+# 1) Docker 이미지 빌드
+docker build -t premisan0/kube-pinger:latest .
+
+# 2) 네임스페이스, RBAC, Deployment 한 번에 배포
+kubectl apply -f config/deploy/deploy.yaml
+
+# 배포 상태 확인
+kubectl get pods -n kube-pinger-system
+```
+
+#### 방법 B: 로컬 프로세스로 개발 실행
 ```bash
 go run main.go
 ```
-또는 클러스터 내 Pod로 배포 시 `config/rbac/rbac.yaml` 적용 후 배포합니다.
 
 ### 3단계: 샘플 테스트 파드 배포
 새 터미널을 열고 재시작을 유발하는 파드 3종을 배포합니다.

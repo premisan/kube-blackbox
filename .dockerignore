@@ -1,0 +1,30 @@
+# Git and version control
+.git
+.gitignore
+
+# Compiled binaries and test artifacts
+bin/
+*.exe
+*.test
+*.out
+coverage.txt
+
+# Environment files and credentials
+.env
+.env.*
+*.key
+*.pem
+*.crt
+*.kubeconfig
+
+# OS and Editor configs
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Docs and deployment manifests not needed inside image binary build
+README.md
+Makefile
+samples/
+config/
