@@ -104,6 +104,7 @@ kubectl apply -f https://raw.githubusercontent.com/premisan/kube-pinger/main/con
 ```
 
 ### 3단계: 배포 상태 확인
+기본적으로 쿠버네티스 리더 선출(Leader Election)을 통해 2개의 리플리카가 Active-Standby 고가용성(HA) 구조로 자동 배포됩니다:
 ```bash
 kubectl get pods -n kube-pinger-system
 ```
@@ -111,16 +112,18 @@ kubectl get pods -n kube-pinger-system
 ```text
 NAME                                             READY   STATUS    RESTARTS   AGE
 kube-pinger-controller-manager-5f7bbd747d-abc12   1/1     Running   0          25s
+kube-pinger-controller-manager-5f7bbd747d-xyz34   1/1     Running   0          25s
 ```
 
-컨트롤러 실시간 로그 확인:
+컨트롤러 실시간 로그 확인 (리더 파드가 분산 락을 획득하고 작업을 수행합니다):
 ```bash
 kubectl logs -f deployment/kube-pinger-controller-manager -n kube-pinger-system
 ```
 
-### 컨트롤러 보관 주기(Retention) 및 TTL 설정 플래그
+### 컨트롤러 고가용성(HA) 및 보관 주기 플래그
 
-Kube-Pinger는 클러스터 etcd 자원을 보호하고 오래된 리소스를 자동 정리하는 안전장치를 내장하고 있습니다:
+Kube-Pinger는 클러스터 etcd 자원을 보호하고 무중단 운영을 위한 안전장치를 내장하고 있습니다:
+- `--leader-elect` (기본값: `true`): `coordination.k8s.io/leases` 분산 락을 이용한 Active-Standby 리더 선출을 활성화합니다.
 - `--max-history-per-container` (기본값: `5`): 컨테이너당 최신 5개의 재시작 기록만 유지합니다. 파드가 `CrashLoopBackOff`로 수십 번 재시작되어도 오래된 기록은 자동으로 실시간 삭제되어 etcd 도배를 방지합니다.
 - `--history-ttl` (기본값: `168h` / 7일): 생성된 지 7일이 지난 오래된 기록을 백그라운드 워커가 주기적으로 자동 청소합니다. 스팟 인스턴스 반환이나 롤링 배포로 파드가 이미 삭제되었더라도 7일 동안 원인 기록이 안전하게 보존됩니다.
 

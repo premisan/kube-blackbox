@@ -104,6 +104,7 @@ kubectl apply -f https://raw.githubusercontent.com/premisan/kube-pinger/main/con
 ```
 
 ### Step 3: Verify Controller Status
+By default, Kube-Pinger deploys in a 2-replica High Availability (HA) configuration using Kubernetes Leader Election (`coordination.k8s.io/leases`):
 ```bash
 kubectl get pods -n kube-pinger-system
 ```
@@ -111,16 +112,18 @@ kubectl get pods -n kube-pinger-system
 ```text
 NAME                                             READY   STATUS    RESTARTS   AGE
 kube-pinger-controller-manager-5f7bbd747d-abc12   1/1     Running   0          20s
+kube-pinger-controller-manager-5f7bbd747d-xyz34   1/1     Running   0          20s
 ```
 
-Check real-time controller logs:
+Check real-time controller logs (Active Leader will show `Successfully acquired lease` and `Starting workers`):
 ```bash
 kubectl logs -f deployment/kube-pinger-controller-manager -n kube-pinger-system
 ```
 
-### Controller Retention & Configuration Flags
+### Controller Retention & HA Configuration Flags
 
-Kube-Pinger includes built-in safeguards to protect etcd from flooding:
+Kube-Pinger includes built-in HA and safeguards to protect etcd from flooding:
+- **`--leader-elect`** (Default: `true`): Enables Active-Standby leader election via Kubernetes Leases for safe multi-replica deployments.
 - **`--max-history-per-container`** (Default: `5`): Keeps only the latest 5 restart records per container. When a container enters `CrashLoopBackOff`, older records are automatically pruned.
 - **`--history-ttl`** (Default: `168h` / 7 days): Background GC worker periodically cleans up records older than 7 days. Pod restart records remain accessible even if the pod or spot node is deleted during cluster scaling or maintenance.
 

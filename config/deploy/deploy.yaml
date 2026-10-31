@@ -62,7 +62,7 @@ metadata:
     control-plane: controller-manager
     app.kubernetes.io/name: kube-pinger
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       control-plane: controller-manager
@@ -75,16 +75,21 @@ spec:
       terminationGracePeriodSeconds: 10
       containers:
         - name: manager
-          image: premisan0/kube-pinger:v0.3.0
+          image: premisan0/kube-pinger:v0.3.1
           imagePullPolicy: Always
           command:
             - /manager
           args:
-            - --leader-elect=false
+            - --leader-elect=true
             - --health-probe-bind-address=:8081
             - --metrics-bind-address=:8080
             - --max-history-per-container=5
             - --history-ttl=168h
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
