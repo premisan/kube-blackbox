@@ -75,8 +75,8 @@ spec:
       terminationGracePeriodSeconds: 10
       containers:
         - name: manager
-          image: premisan0/kube-pinger:latest
-          imagePullPolicy: IfNotPresent
+          image: premisan0/kube-pinger:v0.3.0
+          imagePullPolicy: Always
           command:
             - /manager
           args:
