@@ -105,7 +105,12 @@ kubectl apply -f samples/03-app-panic.yaml
 ### 4단계: 진단 결과 확인
 
 #### 목록 요약 보기 (`kubectl get prh`)
-`additionalPrinterColumns`가 설정되어 있어 주요 진단 결과가 한눈에 표시됩니다:
+`additionalPrinterColumns`가 설정되어 있어 주요 진단 결과가 한눈에 표시됩니다.
+클러스터 전체 네임스페이스(예: kube-system 등)의 재시작 히스토리를 보려면 `-A` 옵션을 사용합니다:
+```bash
+kubectl get prh -A -w
+```
+또는 현재 네임스페이스(default)만 조회:
 ```bash
 kubectl get prh -w
 ```

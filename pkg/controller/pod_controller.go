@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -111,6 +110,10 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 				RestartedAt:   restartedAt,
 				Image:         cs.Image,
 			},
+			Status: observerv1alpha1.PodRestartHistoryStatus{
+				Diagnosis: diagnosis,
+				Evidence:  evidence,
+			},
 		}
 
 		if err := r.Create(ctx, newCR); err != nil {
@@ -118,18 +121,20 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 				continue
 			}
 			logger.Error(err, "Failed to create PodRestartHistory", "crName", crName)
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+			return ctrl.Result{}, err
 		}
 
-		// Update Status
+		// Update Status via status subresource, fallback to standard update if needed
 		newCR.Status = observerv1alpha1.PodRestartHistoryStatus{
 			Diagnosis: diagnosis,
 			Evidence:  evidence,
 		}
 
 		if err := r.Status().Update(ctx, newCR); err != nil {
-			logger.Error(err, "Failed to update PodRestartHistory status", "crName", crName)
-			return ctrl.Result{RequeueAfter: 3 * time.Second}, err
+			if errUpdate := r.Update(ctx, newCR); errUpdate != nil {
+				logger.Error(err, "Failed to update PodRestartHistory status", "crName", crName)
+				return ctrl.Result{}, err
+			}
 		}
 
 		logger.Info("Successfully created PodRestartHistory",
