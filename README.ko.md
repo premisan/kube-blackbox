@@ -6,7 +6,7 @@
 
 > [English Version](README.md)
 
-쿠버네티스 파드의 재시작(`restartCount` 증가)을 실시간으로 감지하고, **종료 상태(LastTerminationState)**, **쿠버네티스 이벤트(Events)**, **직전 컨테이너 로그(Previous Logs)**를 교차 분석하여 근본 원인을 진단한 뒤 `PodRestartHistory` CRD로 자동 기록하는 쿠버네티스 컨트롤러입니다.
+쿠버네티스 파드의 재시작(`restartCount` 증가)을 실시간으로 감지하고 종료 상태(`LastTerminationState`), 쿠버네티스 이벤트(`Events`), 직전 컨테이너 로그(`Previous Logs`)를 교차 분석하여 근본 원인을 진단한 뒤 `PodRestartHistory` CRD로 자동 기록하는 쿠버네티스 컨트롤러입니다.
 
 파드가 재시작되었을 때 여러 `kubectl` 명령어와 과거 로그를 일일이 뒤질 필요 없이, `kubectl get prh` 명령어로 재시작 원인을 한 번에 파악할 수 있습니다.
 
@@ -86,7 +86,7 @@ kube-pinger/
 
 ## 3. 쿠버네티스 클러스터 배포 가이드
 
-`premisan0/kube-pinger:latest` 이미지는 **`linux/amd64`와 `linux/arm64` 멀티 아키텍처**를 공식 지원하므로, 어떤 클러스터 환경(Intel x86, Apple Silicon, AWS Graviton 등)에서든 추가 빌드 없이 즉시 배포할 수 있습니다.
+`premisan0/kube-pinger:latest` 이미지는 `linux/amd64` 및 `linux/arm64` 멀티 아키텍처를 공식 지원하므로, 어떤 클러스터 환경(Intel x86, Apple Silicon, AWS Graviton 등)에서든 추가 빌드 없이 즉시 배포할 수 있습니다.
 
 ### 1단계: CRD 등록
 ```bash
