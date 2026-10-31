@@ -8,7 +8,7 @@ spec:
   restartPolicy: Always
   containers:
     - name: java-backend
-      image: eclipse-temurin:17-alpine
+      image: amazoncorretto:17-alpine
       command: ["/bin/sh", "-c"]
       args:
         - |
