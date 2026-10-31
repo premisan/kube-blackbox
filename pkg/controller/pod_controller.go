@@ -58,7 +58,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 		// Inspect all recorded restarts or the latest restart
 		// By checking CR existence, we guarantee idempotency
-		crName := GenerateCRName(pod.Name, cs.Name, cs.RestartCount)
+		crName := GenerateCRName(pod.Name, string(pod.UID), cs.Name, cs.RestartCount)
 
 		var existingCR observerv1alpha1.PodRestartHistory
 		err := r.Get(ctx, client.ObjectKey{Namespace: pod.Namespace, Name: crName}, &existingCR)
@@ -302,9 +302,25 @@ func (r *PodReconciler) fetchPodEvents(ctx context.Context, namespace, podName s
 	return list.Items
 }
 
-// GenerateCRName produces a deterministic, DNS-1123 compliant resource name
-func GenerateCRName(podName, containerName string, restartCount int32) string {
-	raw := fmt.Sprintf("%s-%s-restart-%d", podName, containerName, restartCount)
+// GenerateCRName produces a deterministic, DNS-1123 compliant resource name.
+// When podUID is provided, a 5-character short UID is embedded to distinguish
+// restarted pods that share identical names (e.g. StatefulSet pods across recreation).
+func GenerateCRName(podName, podUID, containerName string, restartCount int32) string {
+	shortUID := ""
+	if podUID != "" {
+		cleaned := strings.ToLower(strings.ReplaceAll(podUID, "-", ""))
+		if len(cleaned) > 5 {
+			cleaned = cleaned[:5]
+		}
+		shortUID = cleaned
+	}
+
+	var raw string
+	if shortUID != "" {
+		raw = fmt.Sprintf("%s-%s-%s-restart-%d", podName, shortUID, containerName, restartCount)
+	} else {
+		raw = fmt.Sprintf("%s-%s-restart-%d", podName, containerName, restartCount)
+	}
 	raw = strings.ToLower(raw)
 	if len(raw) <= 250 {
 		return raw

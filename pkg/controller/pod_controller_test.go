@@ -20,15 +20,23 @@ import (
 )
 
 func TestGenerateCRName(t *testing.T) {
-	name := GenerateCRName("my-pod", "app", 1)
-	expected := "my-pod-app-restart-1"
-	if name != expected {
-		t.Fatalf("expected %s, got %s", expected, name)
+	// Without UID
+	nameWithoutUID := GenerateCRName("my-pod", "", "app", 1)
+	expectedWithoutUID := "my-pod-app-restart-1"
+	if nameWithoutUID != expectedWithoutUID {
+		t.Fatalf("expected %s, got %s", expectedWithoutUID, nameWithoutUID)
+	}
+
+	// With UID (e.g. StatefulSet pods)
+	nameWithUID := GenerateCRName("web-0", "a1b2c3d4-e5f6-7890", "app", 1)
+	expectedWithUID := "web-0-a1b2c-app-restart-1"
+	if nameWithUID != expectedWithUID {
+		t.Fatalf("expected %s, got %s", expectedWithUID, nameWithUID)
 	}
 
 	// Test long name
 	longPod := strings.Repeat("a", 300)
-	longName := GenerateCRName(longPod, "container", 5)
+	longName := GenerateCRName(longPod, "test-uid", "container", 5)
 	if len(longName) > 253 {
 		t.Fatalf("expected length <= 253, got %d", len(longName))
 	}
@@ -129,7 +137,7 @@ func TestPodReconciler_ReconcileOOM(t *testing.T) {
 	}
 
 	// Verify CR was created
-	crName := GenerateCRName("test-oom-pod", "worker", 1)
+	crName := GenerateCRName("test-oom-pod", "12345-uid", "worker", 1)
 	var cr observerv1alpha1.PodRestartHistory
 	if err := fakeClient.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: crName}, &cr); err != nil {
 		t.Fatalf("failed to fetch created CR: %v", err)
@@ -263,5 +271,114 @@ func TestPodReconciler_CleanExpiredHistories(t *testing.T) {
 	}
 	if list.Items[0].Name != "fresh-prh" {
 		t.Fatalf("expected fresh-prh remaining, got %s", list.Items[0].Name)
+	}
+}
+
+func TestPodReconciler_StatefulSetRecreationCollisionAvoidance(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = observerv1alpha1.AddToScheme(scheme)
+
+	// Older pod instance of web-0
+	oldPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "web-0",
+			Namespace: "default",
+			UID:       "11111-old-uid",
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "nginx",
+					RestartCount: 1,
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode:   137,
+							Reason:     "OOMKilled",
+							FinishedAt: metav1.Now(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cb := clientfake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&observerv1alpha1.PodRestartHistory{}).
+		WithObjects(oldPod)
+	fakeClient := cb.Build()
+	fakeKubeClient := fake.NewSimpleClientset()
+
+	reconciler := &PodReconciler{
+		Client:     fakeClient,
+		KubeClient: fakeKubeClient,
+		Scheme:     scheme,
+		Engine:     analyzer.NewDiagnosticEngine(),
+	}
+
+	req := ctrl.Request{NamespacedName: client.ObjectKey{Namespace: "default", Name: "web-0"}}
+
+	// Reconcile older pod
+	_, err := reconciler.Reconcile(context.Background(), req)
+	if err != nil {
+		t.Fatalf("reconcile old pod failed: %v", err)
+	}
+
+	oldCRName := GenerateCRName("web-0", "11111-old-uid", "nginx", 1)
+	var oldCR observerv1alpha1.PodRestartHistory
+	if err := fakeClient.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: oldCRName}, &oldCR); err != nil {
+		t.Fatalf("failed to fetch old CR: %v", err)
+	}
+
+	// Now StatefulSet recreates pod with same name but new UID
+	newPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "web-0",
+			Namespace: "default",
+			UID:       "22222-new-uid",
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "nginx",
+					RestartCount: 1, // restarted once on the new pod instance
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode:   1,
+							Reason:     "Error",
+							FinishedAt: metav1.Now(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := fakeClient.Update(context.Background(), newPod); err != nil {
+		t.Fatalf("failed to update pod to new instance: %v", err)
+	}
+
+	// Reconcile new pod instance
+	_, err = reconciler.Reconcile(context.Background(), req)
+	if err != nil {
+		t.Fatalf("reconcile new pod failed: %v", err)
+	}
+
+	newCRName := GenerateCRName("web-0", "22222-new-uid", "nginx", 1)
+	var newCR observerv1alpha1.PodRestartHistory
+	if err := fakeClient.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: newCRName}, &newCR); err != nil {
+		t.Fatalf("failed to fetch new CR (should not be skipped due to collision): %v", err)
+	}
+
+	if oldCRName == newCRName {
+		t.Fatalf("CR names collided: %s == %s", oldCRName, newCRName)
+	}
+
+	// Both CRs should exist
+	var list observerv1alpha1.PodRestartHistoryList
+	_ = fakeClient.List(context.Background(), &list)
+	if len(list.Items) != 2 {
+		t.Fatalf("expected 2 CRs, got %d", len(list.Items))
 	}
 }
