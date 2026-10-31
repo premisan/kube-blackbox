@@ -145,22 +145,18 @@ docker buildx build --platform linux/amd64,linux/arm64 -t premisan0/kube-pinger:
 
 ## 5. Testing & Verification
 
-Deploy 3 sample pods to test different restart failure scenarios:
+Deploy the test sample pods all at once to verify multi-language and infrastructure failure diagnoses:
 
-### 1) Deploy Sample Pods
+### 1) Deploy All Sample Pods at Once
 ```bash
-# 1) OOMKilled Pod (Allocates 50MB against 30Mi limit)
-kubectl apply -f samples/01-oomkilled.yaml
-
-# 2) Liveness Probe Failure Pod (Removes /tmp/healthy after 8 seconds)
-kubectl apply -f samples/02-liveness-probe-failure.yaml
-
-# 3) App Panic Pod (Go runtime panic stack trace on stderr)
-kubectl apply -f samples/03-app-panic.yaml
+# Deploys all 5 failure test pods (OOM, Probe Failure, Go Panic, Python Exception, Java Heap OOM)
+kubectl apply -f samples/
+# Or using Makefile:
+# make deploy-samples
 ```
 
 ### 2) Monitor Restart Diagnoses (`kubectl get prh`)
-`additionalPrinterColumns` formats the output so root causes and exit codes are visible immediately:
+`additionalPrinterColumns` formats the output so category, root causes, confidence, and exit codes are visible immediately:
 ```bash
 # View across all namespaces (including kube-system)
 kubectl get prh -A -w
@@ -171,33 +167,38 @@ kubectl get prh -w
 
 *Example Output:*
 ```text
-NAMESPACE   NAME                                         POD                      CONTAINER         COUNT   ROOTCAUSE              CONFIDENCE   EXITCODE   AGE
-default     sample-oomkilled-memory-eater-restart-1       sample-oomkilled         memory-eater      1       OOMKilled              High         137        15s
-default     sample-liveness-failure-web-probe-restart-1  sample-liveness-failure  web-probe         1       LivenessProbeFailure   High         137        10s
-default     sample-app-panic-backend-service-restart-1   sample-app-panic         backend-service   1       AppPanic               High         2          5s
+NAMESPACE   NAME                                         POD                      CONTAINER         COUNT   CATEGORY         ROOTCAUSE                  CONFIDENCE   EXITCODE   AGE
+default     sample-oomkilled-memory-eater-restart-1       sample-oomkilled         memory-eater      1       Infrastructure   OOMKilled                  High         137        15s
+default     sample-liveness-failure-web-probe-restart-1  sample-liveness-failure  web-probe         1       Infrastructure   LivenessProbeFailure       High         137        10s
+default     sample-app-panic-backend-service-restart-1   sample-app-panic         backend-service   1       Application      GoPanic                    High         2          8s
+default     sample-python-crash-python-worker-restart-1  sample-python-crash      python-worker     1       Application      PythonUnhandledException   High         1          5s
+default     sample-java-crash-java-backend-restart-1     sample-java-crash        java-backend      1       Application      JVMHeapOOM                 High         1          3s
 ```
 
-### 3) Inspect Diagnostic Evidence (`kubectl describe prh <name>`)
+### 3) Inspect Diagnostic Evidence & Mitigation Guide (`kubectl describe prh <name>`)
 ```bash
-kubectl describe prh sample-liveness-failure-web-probe-restart-1
+kubectl describe prh sample-java-crash-java-backend-restart-1
 ```
 *Example Output:*
 ```yaml
 Spec:
-  Container Name:  web-probe
-  Pod Name:        sample-liveness-failure
+  Container Name:  java-backend
+  Pod Name:        sample-java-crash
   Restart Count:   1
-  Restarted At:    2026-10-31T10:45:12Z
+  Restarted At:    2026-10-31T11:28:15Z
 Status:
   Diagnosis:
-    Confidence:    High
-    Root Cause:    LivenessProbeFailure
-    Summary:       Container failed liveness probe: Liveness probe failed: cat: can't open '/tmp/healthy': No such file or directory
+    Category:            Application
+    Confidence:          High
+    Root Cause:          JVMHeapOOM
+    Summary:             JVM exhausted heap memory (java.lang.OutOfMemoryError: Java heap space)
+    Recommended Action:  Increase JVM -Xmx heap limit, increase Pod memory limit, or profile memory leaks with heap dump.
   Evidence:
-    Exit Code:           137
-    Matched Events:
-      [Warning] Unhealthy: Liveness probe failed: cat: can't open '/tmp/healthy': No such file or directory (count: 2)
-      [Normal] Killing: Container web-probe failed liveness probe, will be restarted (count: 1)
+    Error Class:         OutOfMemoryError
+    Exit Code:           1
+    Last Log Snippet:    [INFO] Rapid heap allocation loop beginning...
+                         Exception in thread "main" java.lang.OutOfMemoryError: Java heap space
+                         at MemoryHog.main(MemoryHog.java:13)
 ```
 
 ---
@@ -205,8 +206,10 @@ Status:
 ## 6. Cleanup
 
 ```bash
-# Remove sample pods
-make delete-samples
+# Remove all sample pods
+kubectl delete -f samples/ --ignore-not-found
+# Or via Makefile:
+# make delete-samples
 
 # Remove controller deployment and RBAC
 kubectl delete -f config/deploy/deploy.yaml

@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-java-crash
+  labels:
+    app: sample-java-crash
+spec:
+  restartPolicy: Always
+  containers:
+    - name: java-backend
+      image: eclipse-temurin:17-alpine
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Java backend starting with restricted heap (-Xmx32m)..."
+          sleep 3
+
+          cat << 'EOF' > /tmp/MemoryHog.java
+          import java.util.ArrayList;
+          import java.util.List;
+
+          public class MemoryHog {
+              public static void main(String[] args) throws Exception {
+                  System.out.println("[INFO] Processing high-frequency telemetry events...");
+                  Thread.sleep(2000);
+                  List<byte[]> leakList = new ArrayList<>();
+                  System.out.println("[WARN] Rapid heap allocation loop beginning...");
+                  while (true) {
+                      leakList.add(new byte[2 * 1024 * 1024]); // Allocate 2MB chunks until 32MB heap exhausts
+                  }
+              }
+          }
+          EOF
+
+          java -Xmx32m /tmp/MemoryHog.java

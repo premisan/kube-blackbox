@@ -26,11 +26,7 @@ install-crd:
 	kubectl apply -f config/crd/bases/observer.io_podrestarthistories.yaml
 
 deploy-samples:
-	kubectl apply -f samples/01-oomkilled.yaml
-	kubectl apply -f samples/02-liveness-probe-failure.yaml
-	kubectl apply -f samples/03-app-panic.yaml
+	kubectl apply -f samples/
 
 delete-samples:
-	kubectl delete -f samples/01-oomkilled.yaml --ignore-not-found
-	kubectl delete -f samples/02-liveness-probe-failure.yaml --ignore-not-found
-	kubectl delete -f samples/03-app-panic.yaml --ignore-not-found
+	kubectl delete -f samples/ --ignore-not-found

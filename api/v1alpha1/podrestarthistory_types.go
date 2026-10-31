@@ -16,15 +16,19 @@ type PodRestartHistorySpec struct {
 
 // Diagnosis contains the root cause conclusion
 type Diagnosis struct {
-	RootCause  string `json:"rootCause,omitempty"`  // e.g. OOMKilled, LivenessProbeFailure, StartupProbeFailure, AppPanic, NodeEviction, Unknown
-	Confidence string `json:"confidence,omitempty"` // High, Medium, Low
-	Summary    string `json:"summary,omitempty"`
+	Category          string `json:"category,omitempty"`          // Infrastructure, Application, Configuration, Dependency, Unknown
+	RootCause         string `json:"rootCause,omitempty"`         // e.g. OOMKilled, LivenessProbeFailure, StartupProbeFailure, AppPanic, NodeEviction, Unknown
+	Confidence        string `json:"confidence,omitempty"`        // High, Medium, Low
+	Summary           string `json:"summary,omitempty"`
+	RecommendedAction string `json:"recommendedAction,omitempty"` // Actionable mitigation guide for on-call engineers
 }
 
 // Evidence contains the raw collected data that led to the diagnosis
 type Evidence struct {
 	ExitCode          *int32   `json:"exitCode,omitempty"`
 	TerminationReason string   `json:"terminationReason,omitempty"`
+	ErrorClass        string   `json:"errorClass,omitempty"`
+	ErrorLocation     string   `json:"errorLocation,omitempty"`
 	MatchedEvents     []string `json:"matchedEvents,omitempty"`
 	MatchedLogPattern string   `json:"matchedLogPattern,omitempty"`
 	LastLogSnippet    string   `json:"lastLogSnippet,omitempty"`
@@ -42,6 +46,7 @@ type PodRestartHistoryStatus struct {
 // +kubebuilder:printcolumn:name="Pod",type=string,JSONPath=`.spec.podName`
 // +kubebuilder:printcolumn:name="Container",type=string,JSONPath=`.spec.containerName`
 // +kubebuilder:printcolumn:name="Count",type=integer,JSONPath=`.spec.restartCount`
+// +kubebuilder:printcolumn:name="Category",type=string,JSONPath=`.status.diagnosis.category`
 // +kubebuilder:printcolumn:name="RootCause",type=string,JSONPath=`.status.diagnosis.rootCause`
 // +kubebuilder:printcolumn:name="Confidence",type=string,JSONPath=`.status.diagnosis.confidence`
 // +kubebuilder:printcolumn:name="ExitCode",type=integer,JSONPath=`.status.evidence.exitCode`

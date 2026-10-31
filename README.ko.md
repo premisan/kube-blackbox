@@ -145,20 +145,18 @@ docker buildx build --platform linux/amd64,linux/arm64 -t premisan0/kube-pinger:
 
 ## 5. 재시작 진단 테스트 및 확인
 
-### 1) 샘플 파드 3종 배포
+다양한 언어와 인프라 장애 시나리오를 검증하기 위해 테스트 샘플 파드들을 한 번에 배포할 수 있습니다:
+
+### 1) 샘플 파드 전체 한 번에 배포
 ```bash
-# 1) OOMKilled 파드 배포 (메모리 리밋 30Mi 초과)
-kubectl apply -f samples/01-oomkilled.yaml
-
-# 2) Liveness Probe 실패 파드 배포 (8초 후 헬스체크 파일 삭제)
-kubectl apply -f samples/02-liveness-probe-failure.yaml
-
-# 3) App Panic 크래시 파드 배포 (Go 패닉 스택 트레이스 출력 후 크래시)
-kubectl apply -f samples/03-app-panic.yaml
+# 5가지 장애 시나리오 파드 전체 배포 (OOM, Probe 실패, Go Panic, Python 예외, Java Heap OOM)
+kubectl apply -f samples/
+# 또는 Makefile 이용:
+# make deploy-samples
 ```
 
 ### 2) 진단 결과 실시간 확인 (`kubectl get prh`)
-`additionalPrinterColumns`가 설정되어 있어 주요 진단 결과가 한눈에 표시됩니다.
+`additionalPrinterColumns`가 설정되어 있어 카테고리, 근본 원인, 신뢰도, 종료 코드가 한눈에 표시됩니다.
 ```bash
 # 전체 네임스페이스 조회 (kube-system 포함)
 kubectl get prh -A -w
@@ -169,33 +167,38 @@ kubectl get prh -w
 
 *출력 예시:*
 ```text
-NAMESPACE   NAME                                         POD                      CONTAINER         COUNT   ROOTCAUSE              CONFIDENCE   EXITCODE   AGE
-default     sample-oomkilled-memory-eater-restart-1       sample-oomkilled         memory-eater      1       OOMKilled              High         137        15s
-default     sample-liveness-failure-web-probe-restart-1  sample-liveness-failure  web-probe         1       LivenessProbeFailure   High         137        10s
-default     sample-app-panic-backend-service-restart-1   sample-app-panic         backend-service   1       AppPanic               High         2          5s
+NAMESPACE   NAME                                         POD                      CONTAINER         COUNT   CATEGORY         ROOTCAUSE                  CONFIDENCE   EXITCODE   AGE
+default     sample-oomkilled-memory-eater-restart-1       sample-oomkilled         memory-eater      1       Infrastructure   OOMKilled                  High         137        15s
+default     sample-liveness-failure-web-probe-restart-1  sample-liveness-failure  web-probe         1       Infrastructure   LivenessProbeFailure       High         137        10s
+default     sample-app-panic-backend-service-restart-1   sample-app-panic         backend-service   1       Application      GoPanic                    High         2          8s
+default     sample-python-crash-python-worker-restart-1  sample-python-crash      python-worker     1       Application      PythonUnhandledException   High         1          5s
+default     sample-java-crash-java-backend-restart-1     sample-java-crash        java-backend      1       Application      JVMHeapOOM                 High         1          3s
 ```
 
-### 3) 상세 증거 및 로그 스니펫 확인 (`kubectl describe prh <name>`)
+### 3) 상세 증거 및 해결 조치 가이드 확인 (`kubectl describe prh <name>`)
 ```bash
-kubectl describe prh sample-liveness-failure-web-probe-restart-1
+kubectl describe prh sample-java-crash-java-backend-restart-1
 ```
 *출력 예시:*
 ```yaml
 Spec:
-  Container Name:  web-probe
-  Pod Name:        sample-liveness-failure
+  Container Name:  java-backend
+  Pod Name:        sample-java-crash
   Restart Count:   1
-  Restarted At:    2026-10-31T10:45:12Z
+  Restarted At:    2026-10-31T11:28:15Z
 Status:
   Diagnosis:
-    Confidence:    High
-    Root Cause:    LivenessProbeFailure
-    Summary:       Container failed liveness probe: Liveness probe failed: cat: can't open '/tmp/healthy': No such file or directory
+    Category:            Application
+    Confidence:          High
+    Root Cause:          JVMHeapOOM
+    Summary:             JVM exhausted heap memory (java.lang.OutOfMemoryError: Java heap space)
+    Recommended Action:  Increase JVM -Xmx heap limit, increase Pod memory limit, or profile memory leaks with heap dump.
   Evidence:
-    Exit Code:           137
-    Matched Events:
-      [Warning] Unhealthy: Liveness probe failed: cat: can't open '/tmp/healthy': No such file or directory (count: 2)
-      [Normal] Killing: Container web-probe failed liveness probe, will be restarted (count: 1)
+    Error Class:         OutOfMemoryError
+    Exit Code:           1
+    Last Log Snippet:    [INFO] Rapid heap allocation loop beginning...
+                         Exception in thread "main" java.lang.OutOfMemoryError: Java heap space
+                         at MemoryHog.main(MemoryHog.java:13)
 ```
 
 ---
@@ -203,8 +206,10 @@ Status:
 ## 6. 리소스 정리
 
 ```bash
-# 샘플 파드 삭제
-make delete-samples
+# 샘플 파드 전체 한 번에 삭제
+kubectl delete -f samples/ --ignore-not-found
+# 또는 Makefile 이용:
+# make delete-samples
 
 # kube-pinger 컨트롤러 및 RBAC 언디플로이
 kubectl delete -f config/deploy/deploy.yaml

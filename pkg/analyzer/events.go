@@ -9,19 +9,23 @@ import (
 )
 
 type EventRule struct {
-	Name       string
-	RootCause  string
-	Confidence string
-	SummaryTpl string
-	Match      func(evt corev1.Event, containerName string) bool
+	Name              string
+	Category          string
+	RootCause         string
+	Confidence        string
+	SummaryTpl        string
+	RecommendedAction string
+	Match             func(evt corev1.Event, containerName string) bool
 }
 
 var eventRules = []EventRule{
 	{
-		Name:       "LivenessProbeFailed",
-		RootCause:  "LivenessProbeFailure",
-		Confidence: "High",
-		SummaryTpl: "Container failed liveness probe: %s",
+		Name:              "LivenessProbeFailed",
+		Category:          "Infrastructure",
+		RootCause:         "LivenessProbeFailure",
+		Confidence:        "High",
+		SummaryTpl:        "Container failed liveness probe: %s",
+		RecommendedAction: "Check application responsiveness, HTTP endpoint health, or increase livenessProbe initialDelaySeconds/timeoutSeconds.",
 		Match: func(evt corev1.Event, containerName string) bool {
 			msg := evt.Message
 			return (evt.Reason == "Unhealthy" || evt.Reason == "Killing") &&
@@ -30,10 +34,12 @@ var eventRules = []EventRule{
 		},
 	},
 	{
-		Name:       "StartupProbeFailed",
-		RootCause:  "StartupProbeFailure",
-		Confidence: "High",
-		SummaryTpl: "Container failed startup probe: %s",
+		Name:              "StartupProbeFailed",
+		Category:          "Infrastructure",
+		RootCause:         "StartupProbeFailure",
+		Confidence:        "High",
+		SummaryTpl:        "Container failed startup probe: %s",
+		RecommendedAction: "Application takes longer to boot than configured. Increase startupProbe failureThreshold or periodSeconds.",
 		Match: func(evt corev1.Event, containerName string) bool {
 			msg := evt.Message
 			return (evt.Reason == "Unhealthy" || evt.Reason == "Killing") &&
@@ -42,10 +48,12 @@ var eventRules = []EventRule{
 		},
 	},
 	{
-		Name:       "NodeEviction",
-		RootCause:  "NodeEviction",
-		Confidence: "High",
-		SummaryTpl: "Pod evicted due to node pressure: %s",
+		Name:              "NodeEviction",
+		Category:          "Infrastructure",
+		RootCause:         "NodeEviction",
+		Confidence:        "High",
+		SummaryTpl:        "Pod evicted due to node resource pressure: %s",
+		RecommendedAction: "Node ran out of disk or memory. Verify node resources (kubectl describe node) or increase node cluster capacity.",
 		Match: func(evt corev1.Event, containerName string) bool {
 			return evt.Reason == "Evicted" ||
 				strings.Contains(evt.Message, "low on resource") ||
@@ -53,20 +61,46 @@ var eventRules = []EventRule{
 		},
 	},
 	{
-		Name:       "Preempted",
-		RootCause:  "Preempted",
-		Confidence: "High",
-		SummaryTpl: "Pod was preempted by higher priority pod: %s",
+		Name:              "Preempted",
+		Category:          "Infrastructure",
+		RootCause:         "Preempted",
+		Confidence:        "High",
+		SummaryTpl:        "Pod was preempted by higher priority pod: %s",
+		RecommendedAction: "Check PriorityClass of other pods in the cluster or assign a dedicated node pool.",
 		Match: func(evt corev1.Event, containerName string) bool {
 			return evt.Reason == "Preempted" || strings.Contains(evt.Message, "preempted by")
+		},
+	},
+	{
+		Name:              "FailedMountVolume",
+		Category:          "Infrastructure",
+		RootCause:         "VolumeMountFailure",
+		Confidence:        "High",
+		SummaryTpl:        "Volume mount failed: %s",
+		RecommendedAction: "Verify PVC status, storage class provisioner, and node disk attachment limits.",
+		Match: func(evt corev1.Event, containerName string) bool {
+			return evt.Reason == "FailedMount" || evt.Reason == "FailedAttachVolume"
+		},
+	},
+	{
+		Name:              "FailedCreateSandbox",
+		Category:          "Infrastructure",
+		RootCause:         "PodSandboxConfigFailure",
+		Confidence:        "High",
+		SummaryTpl:        "Failed to create pod sandbox: %s",
+		RecommendedAction: "Check CNI plugin health, IP address exhaustion on the node subnet, or container runtime daemon.",
+		Match: func(evt corev1.Event, containerName string) bool {
+			return evt.Reason == "FailedCreatePodSandBox"
 		},
 	},
 }
 
 type EventAnalysisResult struct {
-	MatchedRule   *EventRule
-	MatchedEvents []string
-	Summary       string
+	MatchedRule       *EventRule
+	MatchedEvents     []string
+	Summary           string
+	Category          string
+	RecommendedAction string
 }
 
 // AnalyzeEvents checks recent events for the target container and returns matched root cause if any.
@@ -97,8 +131,10 @@ func AnalyzeEvents(events []corev1.Event, containerName string, restartedAt time
 				matchedStrings = append(matchedStrings, formatted)
 				if topResult == nil {
 					topResult = &EventAnalysisResult{
-						MatchedRule: &rule,
-						Summary:     fmt.Sprintf(rule.SummaryTpl, truncateString(evt.Message, 100)),
+						MatchedRule:       &rule,
+						Category:          rule.Category,
+						Summary:           fmt.Sprintf(rule.SummaryTpl, truncateString(evt.Message, 100)),
+						RecommendedAction: rule.RecommendedAction,
 					}
 				}
 				break

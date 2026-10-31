@@ -28,6 +28,9 @@ spec:
         - name: Count
           type: integer
           jsonPath: .spec.restartCount
+        - name: Category
+          type: string
+          jsonPath: .status.diagnosis.category
         - name: RootCause
           type: string
           jsonPath: .status.diagnosis.rootCause
@@ -75,11 +78,15 @@ spec:
                 diagnosis:
                   type: object
                   properties:
+                    category:
+                      type: string
                     rootCause:
                       type: string
                     confidence:
                       type: string
                     summary:
+                      type: string
+                    recommendedAction:
                       type: string
                 evidence:
                   type: object
@@ -87,6 +94,10 @@ spec:
                     exitCode:
                       type: integer
                     terminationReason:
+                      type: string
+                    errorClass:
+                      type: string
+                    errorLocation:
                       type: string
                     matchedEvents:
                       type: array
