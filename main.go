@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -32,11 +33,15 @@ func main() {
 	var metricsAddr string
 	var probeAddr string
 	var enableLeaderElection bool
+	var maxHistoryPerContainer int
+	var historyTTL time.Duration
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	flag.IntVar(&maxHistoryPerContainer, "max-history-per-container", 5, "Maximum number of PodRestartHistory records to retain per container.")
+	flag.DurationVar(&historyTTL, "history-ttl", 7*24*time.Hour, "Time-to-live duration for PodRestartHistory records before garbage collection (e.g. 168h for 7 days).")
 
 	opts := zap.Options{
 		Development: true,
@@ -71,10 +76,12 @@ func main() {
 	diagnosticEngine := analyzer.NewDiagnosticEngine()
 
 	podReconciler := &controller.PodReconciler{
-		Client:     mgr.GetClient(),
-		KubeClient: kubeClient,
-		Scheme:     mgr.GetScheme(),
-		Engine:     diagnosticEngine,
+		Client:                 mgr.GetClient(),
+		KubeClient:             kubeClient,
+		Scheme:                 mgr.GetScheme(),
+		Engine:                 diagnosticEngine,
+		MaxHistoryPerContainer: maxHistoryPerContainer,
+		HistoryTTL:             historyTTL,
 	}
 
 	if err = podReconciler.SetupWithManager(mgr); err != nil {

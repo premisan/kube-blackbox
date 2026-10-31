@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -24,12 +26,14 @@ import (
 	"github.com/premisan/kube-pinger/pkg/analyzer"
 )
 
-// PodReconciler reconciles Pod restarts and generates PodRestartHistory CRs
+// PodReconciler reconciles Pod restarts, creates diagnoses, and manages retention & TTL.
 type PodReconciler struct {
 	client.Client
-	KubeClient kubernetes.Interface
-	Scheme     *runtime.Scheme
-	Engine     *analyzer.DiagnosticEngine
+	KubeClient             kubernetes.Interface
+	Scheme                 *runtime.Scheme
+	Engine                 *analyzer.DiagnosticEngine
+	MaxHistoryPerContainer int
+	HistoryTTL             time.Duration
 }
 
 func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -139,12 +143,128 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 		logger.Info("Successfully created PodRestartHistory",
 			"crName", crName,
+			"category", diagnosis.Category,
 			"rootCause", diagnosis.RootCause,
 			"confidence", diagnosis.Confidence,
 		)
+
+		// Prune older histories exceeding MaxHistoryPerContainer
+		r.pruneExcessHistories(ctx, pod.Namespace, pod.Name, cs.Name)
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// pruneExcessHistories deletes older PodRestartHistory records exceeding MaxHistoryPerContainer
+func (r *PodReconciler) pruneExcessHistories(ctx context.Context, namespace, podName, containerName string) {
+	maxHistory := r.MaxHistoryPerContainer
+	if maxHistory <= 0 {
+		maxHistory = 5
+	}
+
+	logger := log.FromContext(ctx).WithValues("pod", podName, "container", containerName)
+
+	var list observerv1alpha1.PodRestartHistoryList
+	err := r.List(ctx, &list,
+		client.InNamespace(namespace),
+		client.MatchingLabels{
+			"observer.io/pod-name":       sanitizeLabelValue(podName),
+			"observer.io/container-name": sanitizeLabelValue(containerName),
+		},
+	)
+	if err != nil {
+		logger.Error(err, "Failed to list PodRestartHistories for pruning")
+		return
+	}
+
+	if len(list.Items) <= maxHistory {
+		return
+	}
+
+	// Sort items by RestartCount ascending (oldest first)
+	sort.Slice(list.Items, func(i, j int) bool {
+		return list.Items[i].Spec.RestartCount < list.Items[j].Spec.RestartCount
+	})
+
+	excessCount := len(list.Items) - maxHistory
+	for i := 0; i < excessCount; i++ {
+		item := list.Items[i]
+		if err := r.Delete(ctx, &item); err != nil && !apierrors.IsNotFound(err) {
+			logger.Error(err, "Failed to delete excess PodRestartHistory", "crName", item.Name)
+		} else {
+			logger.Info("Pruned older PodRestartHistory exceeding max history limit",
+				"crName", item.Name,
+				"restartCount", item.Spec.RestartCount,
+				"maxAllowed", maxHistory,
+			)
+		}
+	}
+}
+
+// Start implements manager.Runnable to execute the periodic TTL cleaner
+func (r *PodReconciler) Start(ctx context.Context) error {
+	return r.RunTTLCleaner(ctx)
+}
+
+// RunTTLCleaner periodically checks for and deletes PodRestartHistory records exceeding HistoryTTL
+func (r *PodReconciler) RunTTLCleaner(ctx context.Context) error {
+	logger := log.FromContext(ctx).WithName("ttl-cleaner")
+
+	ttl := r.HistoryTTL
+	if ttl <= 0 {
+		ttl = 7 * 24 * time.Hour // default 7 days
+	}
+
+	logger.Info("Starting periodic TTL garbage collection worker", "ttl", ttl)
+
+	// Run once immediately, then periodically every hour
+	r.cleanExpiredHistories(ctx, ttl)
+
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("Stopping TTL garbage collection worker")
+			return nil
+		case <-ticker.C:
+			r.cleanExpiredHistories(ctx, ttl)
+		}
+	}
+}
+
+func (r *PodReconciler) cleanExpiredHistories(ctx context.Context, ttl time.Duration) {
+	logger := log.FromContext(ctx).WithName("ttl-cleaner")
+
+	var list observerv1alpha1.PodRestartHistoryList
+	if err := r.List(ctx, &list); err != nil {
+		logger.Error(err, "Failed to list PodRestartHistories for TTL cleanup")
+		return
+	}
+
+	now := time.Now()
+	deletedCount := 0
+
+	for _, item := range list.Items {
+		age := now.Sub(item.CreationTimestamp.Time)
+		if age > ttl {
+			if err := r.Delete(ctx, &item); err != nil && !apierrors.IsNotFound(err) {
+				logger.Error(err, "Failed to delete expired PodRestartHistory", "crName", item.Name)
+			} else {
+				deletedCount++
+				logger.Info("Deleted expired PodRestartHistory",
+					"crName", item.Name,
+					"age", age.Round(time.Minute).String(),
+					"ttl", ttl.String(),
+				)
+			}
+		}
+	}
+
+	if deletedCount > 0 {
+		logger.Info("TTL cleanup finished", "deletedCount", deletedCount)
+	}
 }
 
 func (r *PodReconciler) fetchPreviousLogs(ctx context.Context, namespace, podName, containerName string) string {
@@ -160,7 +280,6 @@ func (r *PodReconciler) fetchPreviousLogs(ctx context.Context, namespace, podNam
 
 	stream, err := req.Stream(ctx)
 	if err != nil {
-		// Previous log might not exist yet or was garbage-collected
 		return ""
 	}
 	defer stream.Close()
@@ -190,7 +309,6 @@ func GenerateCRName(podName, containerName string, restartCount int32) string {
 	if len(raw) <= 250 {
 		return raw
 	}
-	// Hash if too long
 	hash := sha256.Sum256([]byte(raw))
 	shortHash := hex.EncodeToString(hash[:])[:8]
 	prefix := raw
@@ -250,6 +368,18 @@ func totalRestarts(pod *corev1.Pod) int32 {
 }
 
 func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.MaxHistoryPerContainer <= 0 {
+		r.MaxHistoryPerContainer = 5
+	}
+	if r.HistoryTTL <= 0 {
+		r.HistoryTTL = 7 * 24 * time.Hour // default 7 days
+	}
+
+	// Register TTL Cleaner as background runner
+	if err := mgr.Add(r); err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
 		WithEventFilter(PodRestartPredicate()).

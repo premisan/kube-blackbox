@@ -118,6 +118,12 @@ Check real-time controller logs:
 kubectl logs -f deployment/kube-pinger-controller-manager -n kube-pinger-system
 ```
 
+### Controller Retention & Configuration Flags
+
+Kube-Pinger includes built-in safeguards to protect etcd from flooding:
+- **`--max-history-per-container`** (Default: `5`): Keeps only the latest 5 restart records per container. When a container enters `CrashLoopBackOff`, older records are automatically pruned.
+- **`--history-ttl`** (Default: `168h` / 7 days): Background GC worker periodically cleans up records older than 7 days. Pod restart records remain accessible even if the pod or spot node is deleted during cluster scaling or maintenance.
+
 ---
 
 ## 4. Local Development (Optional)

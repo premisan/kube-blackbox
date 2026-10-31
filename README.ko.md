@@ -118,6 +118,12 @@ kube-pinger-controller-manager-5f7bbd747d-abc12   1/1     Running   0          2
 kubectl logs -f deployment/kube-pinger-controller-manager -n kube-pinger-system
 ```
 
+### 컨트롤러 보관 주기(Retention) 및 TTL 설정 플래그
+
+Kube-Pinger는 클러스터 etcd 자원을 보호하고 오래된 리소스를 자동 정리하는 안전장치를 내장하고 있습니다:
+- `--max-history-per-container` (기본값: `5`): 컨테이너당 최신 5개의 재시작 기록만 유지합니다. 파드가 `CrashLoopBackOff`로 수십 번 재시작되어도 오래된 기록은 자동으로 실시간 삭제되어 etcd 도배를 방지합니다.
+- `--history-ttl` (기본값: `168h` / 7일): 생성된 지 7일이 지난 오래된 기록을 백그라운드 워커가 주기적으로 자동 청소합니다. 스팟 인스턴스 반환이나 롤링 배포로 파드가 이미 삭제되었더라도 7일 동안 원인 기록이 안전하게 보존됩니다.
+
 ---
 
 ## 4. 로컬 개발 환경 실행 (선택사항)

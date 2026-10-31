@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -142,5 +143,125 @@ func TestPodReconciler_ReconcileOOM(t *testing.T) {
 	}
 	if cr.Status.Diagnosis.Confidence != "High" {
 		t.Fatalf("expected diagnosis Confidence High, got %s", cr.Status.Diagnosis.Confidence)
+	}
+}
+
+func TestPodReconciler_PruneExcessHistories(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = observerv1alpha1.AddToScheme(scheme)
+
+	cr1 := &observerv1alpha1.PodRestartHistory{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod-app-restart-1",
+			Namespace: "default",
+			Labels: map[string]string{
+				"observer.io/pod-name":       "my-pod",
+				"observer.io/container-name": "app",
+			},
+		},
+		Spec: observerv1alpha1.PodRestartHistorySpec{
+			PodName:       "my-pod",
+			ContainerName: "app",
+			RestartCount:  1,
+		},
+	}
+	cr2 := &observerv1alpha1.PodRestartHistory{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod-app-restart-2",
+			Namespace: "default",
+			Labels: map[string]string{
+				"observer.io/pod-name":       "my-pod",
+				"observer.io/container-name": "app",
+			},
+		},
+		Spec: observerv1alpha1.PodRestartHistorySpec{
+			PodName:       "my-pod",
+			ContainerName: "app",
+			RestartCount:  2,
+		},
+	}
+	cr3 := &observerv1alpha1.PodRestartHistory{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod-app-restart-3",
+			Namespace: "default",
+			Labels: map[string]string{
+				"observer.io/pod-name":       "my-pod",
+				"observer.io/container-name": "app",
+			},
+		},
+		Spec: observerv1alpha1.PodRestartHistorySpec{
+			PodName:       "my-pod",
+			ContainerName: "app",
+			RestartCount:  3,
+		},
+	}
+
+	cb := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(cr1, cr2, cr3)
+	fakeClient := cb.Build()
+
+	reconciler := &PodReconciler{
+		Client:                 fakeClient,
+		Scheme:                 scheme,
+		MaxHistoryPerContainer: 2, // Only keep 2!
+	}
+
+	reconciler.pruneExcessHistories(context.Background(), "default", "my-pod", "app")
+
+	var list observerv1alpha1.PodRestartHistoryList
+	_ = fakeClient.List(context.Background(), &list)
+	if len(list.Items) != 2 {
+		t.Fatalf("expected exactly 2 items remaining, got %d", len(list.Items))
+	}
+
+	// Verify cr1 (restart 1) was deleted, and cr2, cr3 remain
+	for _, item := range list.Items {
+		if item.Spec.RestartCount == 1 {
+			t.Fatalf("expected restart 1 to be pruned, but still found")
+		}
+	}
+}
+
+func TestPodReconciler_CleanExpiredHistories(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = observerv1alpha1.AddToScheme(scheme)
+
+	expiredTime := metav1.Time{Time: time.Now().Add(-8 * 24 * time.Hour)} // 8 days ago
+	freshTime := metav1.Time{Time: time.Now().Add(-1 * 24 * time.Hour)}   // 1 day ago
+
+	expiredCR := &observerv1alpha1.PodRestartHistory{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "expired-prh",
+			Namespace:         "default",
+			CreationTimestamp: expiredTime,
+		},
+	}
+	freshCR := &observerv1alpha1.PodRestartHistory{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "fresh-prh",
+			Namespace:         "default",
+			CreationTimestamp: freshTime,
+		},
+	}
+
+	cb := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(expiredCR, freshCR)
+	fakeClient := cb.Build()
+
+	reconciler := &PodReconciler{
+		Client:     fakeClient,
+		Scheme:     scheme,
+		HistoryTTL: 7 * 24 * time.Hour, // 7 days
+	}
+
+	reconciler.cleanExpiredHistories(context.Background(), 7*24*time.Hour)
+
+	var list observerv1alpha1.PodRestartHistoryList
+	_ = fakeClient.List(context.Background(), &list)
+	if len(list.Items) != 1 {
+		t.Fatalf("expected 1 item remaining, got %d", len(list.Items))
+	}
+	if list.Items[0].Name != "fresh-prh" {
+		t.Fatalf("expected fresh-prh remaining, got %s", list.Items[0].Name)
 	}
 }

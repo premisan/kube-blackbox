@@ -83,6 +83,8 @@ spec:
             - --leader-elect=false
             - --health-probe-bind-address=:8081
             - --metrics-bind-address=:8080
+            - --max-history-per-container=5
+            - --history-ttl=168h
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
