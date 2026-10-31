@@ -1,0 +1,96 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: podrestarthistories.observer.io
+spec:
+  group: observer.io
+  names:
+    kind: PodRestartHistory
+    listKind: PodRestartHistoryList
+    plural: podrestarthistories
+    singular: podrestarthistory
+    shortNames:
+      - prh
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Pod
+          type: string
+          jsonPath: .spec.podName
+        - name: Container
+          type: string
+          jsonPath: .spec.containerName
+        - name: Count
+          type: integer
+          jsonPath: .spec.restartCount
+        - name: RootCause
+          type: string
+          jsonPath: .status.diagnosis.rootCause
+        - name: Confidence
+          type: string
+          jsonPath: .status.diagnosis.confidence
+        - name: ExitCode
+          type: integer
+          jsonPath: .status.evidence.exitCode
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - podName
+                - containerName
+                - restartCount
+                - restartedAt
+              properties:
+                podName:
+                  type: string
+                containerName:
+                  type: string
+                restartCount:
+                  type: integer
+                restartedAt:
+                  type: string
+                  format: date-time
+                image:
+                  type: string
+            status:
+              type: object
+              properties:
+                diagnosis:
+                  type: object
+                  properties:
+                    rootCause:
+                      type: string
+                    confidence:
+                      type: string
+                    summary:
+                      type: string
+                evidence:
+                  type: object
+                  properties:
+                    exitCode:
+                      type: integer
+                    terminationReason:
+                      type: string
+                    matchedEvents:
+                      type: array
+                      items:
+                        type: string
+                    matchedLogPattern:
+                      type: string
+                    lastLogSnippet:
+                      type: string

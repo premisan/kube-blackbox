@@ -1,0 +1,29 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, coverprofile
+*.test
+*.out
+coverage.txt
+
+# OS and Editor files
+.DS_Store
+.AppleDouble
+.LSOverride
+.idea/
+.vscode/
+*.swp
+*~
+
+# Kubernetes / Local secrets
+*.kubeconfig
+*.key
+*.pem
+*.crt
+.env
+.env.*

@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-oomkilled
+  labels:
+    app: sample-oomkilled
+spec:
+  restartPolicy: Always
+  containers:
+    - name: memory-eater
+      image: alpine:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Starting memory-eater container..."
+          sleep 3
+          echo "[INFO] Allocating memory exceeding limit (30Mi)..."
+          # Attempts to read 50MB into memory buffer, triggering Linux cgroup OOM killer
+          python3 -c "x = bytearray(50 * 1024 * 1024)" 2>/dev/null || dd if=/dev/zero of=/dev/null bs=50M count=1
+          # Fallback infinite memory eater if python3/dd doesn't trigger
+          tail /dev/zero
+      resources:
+        limits:
+          memory: "30Mi"
+        requests:
+          memory: "15Mi"

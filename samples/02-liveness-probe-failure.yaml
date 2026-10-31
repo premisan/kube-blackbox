@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-liveness-failure
+  labels:
+    app: sample-liveness-failure
+spec:
+  restartPolicy: Always
+  containers:
+    - name: web-probe
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          touch /tmp/healthy
+          echo "[INFO] Container started, health check is OK (/tmp/healthy created)"
+          # After 8 seconds, remove the health check file to trigger liveness failure
+          sleep 8
+          rm -rf /tmp/healthy
+          echo "[WARN] /tmp/healthy removed, upcoming liveness checks will fail!"
+          sleep 600
+      livenessProbe:
+        exec:
+          command:
+            - cat
+            - /tmp/healthy
+        initialDelaySeconds: 2
+        periodSeconds: 3
+        failureThreshold: 2
