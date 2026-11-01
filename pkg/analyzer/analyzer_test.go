@@ -1336,3 +1336,98 @@ func TestDiagnose_TCPConnectionReset(t *testing.T) {
 
 
 
+
+func TestDiagnose_DBDriver_MySQLDeadlock(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException: Deadlock found when trying to get lock; try restarting transaction
+	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:121)
+	at com.mysql.cj.jdbc.exceptions.SQLError.createMySQLTransactionRollbackException(SQLError.java:112)
+`
+	input := DiagnosticInput{
+		ContainerName: "payment-api",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "payment-api",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "MySQLDeadlock" {
+		t.Fatalf("expected MySQLDeadlock, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "MySQL_1213_Deadlock" {
+		t.Fatalf("expected MySQL_1213_Deadlock, got: %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_DBDriver_PostgresInFailedTx(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+Traceback (most recent call last):
+  File "server.py", line 45, in execute_query
+    cursor.execute("SELECT 1")
+psycopg2.errors.InFailedSqlTransaction: current transaction is aborted, commands ignored until end of transaction block
+`
+	input := DiagnosticInput{
+		ContainerName: "django-web",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "django-web",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "PostgresInFailedSQLTransaction" {
+		t.Fatalf("expected PostgresInFailedSQLTransaction, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "PostgreSQL_25P02_InFailedTx" {
+		t.Fatalf("expected PostgreSQL_25P02_InFailedTx, got: %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_DBDriver_BigQueryPartitionFilter(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+Traceback (most recent call last):
+  File "export.py", line 19, in run
+    query_job.result()
+google.cloud.exceptions.BadRequest: 400 Cannot query over table 'corp-data.sales.orders' without a filter over column(s) 'order_date' that can be used for partition elimination
+`
+	input := DiagnosticInput{
+		ContainerName: "bq-exporter",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "bq-exporter",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "BigQueryPartitionFilterRequired" {
+		t.Fatalf("expected BigQueryPartitionFilterRequired, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "BigQuery_PartitionFilterRequired" {
+		t.Fatalf("expected BigQuery_PartitionFilterRequired, got: %s", ev.ErrorClass)
+	}
+}

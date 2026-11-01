@@ -377,16 +377,16 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			RecommendedAction: "PgBouncer 커넥션 풀러를 도입하거나 postgresql.conf의 max_connections를 늘리세요.",
 		},
 		"PostgresDeadlock": {
-			SummaryTpl:        "PostgreSQL 트랜잭션 간 교착 상태(Deadlock detected)가 발생했습니다.",
-			RecommendedAction: "트랜잭션 내에서 테이블/행 락을 획득하는 순서를 동일하게 통일하세요.",
+			SummaryTpl:        "PostgreSQL 트랜잭션 상호 교착 상태(Deadlock)가 감지되어 트랜잭션이 중단되었습니다 (SQLState 40P01).",
+			RecommendedAction: "복수 행 갱신 시 기본키 순으로 정렬하여 락을 획득하고 SELECT FOR UPDATE 잠금 범위를 최소화하세요.",
 		},
 		"MySQLTooManyConnections": {
-			SummaryTpl:        "MySQL 서버 연결 수 한계에 도달했습니다 (ERROR 1040: Too many connections).",
-			RecommendedAction: "my.cnf의 max_connections를 증설하거나 ProxySQL을 구성하세요.",
+			SummaryTpl:        "MySQL 서버의 최대 동시 연결 수(max_connections)를 초과하여 신규 커넥션이 거부되었습니다 (Error 1040).",
+			RecommendedAction: "MySQL max_connections 설정 상향 및 클라이언트 커넥션 풀 크기(maximum-pool-size, pool_size)를 파드 수에 맞게 제한하세요.",
 		},
 		"MySQLDeadlock": {
-			SummaryTpl:        "MySQL InnoDB 트랜잭션 교착 상태(Deadlock 1213)가 감지되었습니다.",
-			RecommendedAction: "1213 에러 시 트랜잭션 자동 재시도 로직을 적용하거나 쿼리 인덱스를 개선하세요.",
+			SummaryTpl:        "MySQL InnoDB 트랜잭션 상호 잠금(Deadlock)이 감지되어 트랜잭션이 강제 롤백되었습니다 (Error 1213).",
+			RecommendedAction: "트랜잭션 내 테이블/행 접근 순서를 일관되게 정렬하고 트랜잭션 길이를 축소하며 자동 재시도(@Retryable)를 구현하세요.",
 		},
 		"RedisOOM": {
 			SummaryTpl:        "Redis 메모리가 maxmemory 제한에 도달하여 쓰기 명령이 거부되었습니다.",
@@ -601,8 +601,8 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			RecommendedAction: "pg_stat_activity에서 블로킹 트랜잭션을 점검하고 배타적 DDL/DML 락 경합을 해소하세요.",
 		},
 		"PostgresStatementTimeout": {
-			SummaryTpl:        "PostgreSQL 개별 쿼리 실행 시간 한도(statement_timeout) 초과로 쿼리가 취소됨.",
-			RecommendedAction: "느린 쿼리에 인덱스를 추가하거나 EXPLAIN ANALYZE로 실행 계획을 튜닝하세요.",
+			SummaryTpl:        "PostgreSQL 쿼리 실행 시간이 statement_timeout 임계값을 초과하여 강제 취소되었습니다 (SQLState 57014).",
+			RecommendedAction: "EXPLAIN ANALYZE로 쿼리 실행 계획을 점검하여 누락된 인덱스를 추가하고 순차 스캔을 방지하세요.",
 		},
 		"JenkinsDiskSpaceExhausted": {
 			SummaryTpl:        "Jenkins 컨트롤러 또는 에이전트 노드의 디스크 가용 공간이 임계치 미만으로 고갈됨.",
@@ -787,6 +787,70 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 		"ProxySSLBumpFailure": {
 			SummaryTpl:        "Squid SslBump 동적 인증서 생성 실패 (ERR_SECURE_ACCEPT_FAIL).",
 			RecommendedAction: "Squid ssl_crtd 헬퍼 권한 및 캐시 크기를 확인하고 사설 루트 CA 유효기간을 점검하세요.",
+		},
+		"MySQLLockWaitTimeout": {
+			SummaryTpl:        "MySQL InnoDB 행 락 획득 대기 시간(innodb_lock_wait_timeout)이 초과되었습니다 (Error 1205).",
+			RecommendedAction: "장기 실행 트랜잭션을 점검하고 미커밋 세션을 정리하거나 innodb_lock_wait_timeout을 튜닝하세요.",
+		},
+		"MySQLPacketTooLarge": {
+			SummaryTpl:        "MySQL 네트워크 패킷 크기가 서버의 max_allowed_packet 한도를 초과했습니다 (Error 1153).",
+			RecommendedAction: "my.cnf의 max_allowed_packet 설정을 64M 이상으로 상향하고 클라이언트 드라이버 설정도 일치시키세요.",
+		},
+		"MySQLCommunicationsLinkFailure": {
+			SummaryTpl:        "MySQL 유휴 연결 시간(wait_timeout) 초과 또는 원격 소켓 강제 종료로 통신 링크가 단절되었습니다.",
+			RecommendedAction: "커넥션 풀의 maxLifetime/idleTimeout을 MySQL wait_timeout보다 짧게 설정하고 validationQuery('SELECT 1')를 활성화하세요.",
+		},
+		"MySQLReadOnlyMode": {
+			SummaryTpl:        "MySQL 서버가 읽기 전용(--read-only) 상태에서 쓰기 쿼리를 거절했습니다 (클러스터 페일오버 동기화 지연).",
+			RecommendedAction: "애플리케이션 접속 정보가 클러스터의 Writer 엔드포인트를 가리키는지 확인하고 DNS TTL을 낮추세요.",
+		},
+		"PostgresTooManyConnections": {
+			SummaryTpl:        "PostgreSQL 연결 슬롯이 고갈되어 접속이 거절되었습니다 (SQLState 53300: sorry, too many clients already).",
+			RecommendedAction: "PgBouncer 등 커넥션 풀러를 도입하고 postgresql.conf의 max_connections 및 각 파드의 커넥션 풀 한도를 축소하세요.",
+		},
+		"PostgresInFailedSQLTransaction": {
+			SummaryTpl:        "PostgreSQL 트랜잭션 내 이전 쿼리 실패 후 ROLLBACK 없이 후속 명령이 실행되어 거절되었습니다 (SQLState 25P02).",
+			RecommendedAction: "트랜잭션 블록 내 오류 발생 시 반드시 명시적 ROLLBACK을 호출하거나 SAVEPOINT를 사용하세요.",
+		},
+		"PostgresCannotConnectNow": {
+			SummaryTpl:        "PostgreSQL 인스턴스가 복구 모드(Recovery) 또는 기동/종료 중이어서 연결할 수 없습니다 (SQLState 57P03).",
+			RecommendedAction: "PostgreSQL 파드의 WAL 리플레이 진행 상태를 확인하고 프라이머리 승격 완료 후 애플리케이션을 연결하세요.",
+		},
+		"PostgresDiskFull": {
+			SummaryTpl:        "PostgreSQL 데이터 또는 WAL 볼륨의 디스크 용량이 고갈되었습니다 (SQLState 53100: No space left on device).",
+			RecommendedAction: "PostgreSQL PVC 볼륨을 즉시 확장하고 비정상 누적된 pg_wal 아카이브 및 임시 테이블스페이스를 정리하세요.",
+		},
+		"ClickHouseSimultaneousQueries": {
+			SummaryTpl:        "ClickHouse 서버의 최대 동시 쿼리 수(max_concurrent_queries) 한도를 초과했습니다 (Code 202).",
+			RecommendedAction: "config.xml의 max_concurrent_queries 설정을 상향하거나 클라이언트 측에서 쿼리 동시 유입량을 제어하세요.",
+		},
+		"ClickHouseTimeoutExceeded": {
+			SummaryTpl:        "ClickHouse 쿼리 실행 시간(max_execution_time)이 초과되어 취소되었습니다 (Code 159).",
+			RecommendedAction: "max_execution_time 설정을 조정하고 WHERE 절에 파티션 키 및 기본 정렬 키(ORDER BY)를 포함하세요.",
+		},
+		"ClickHouseConnectionPoolExhausted": {
+			SummaryTpl:        "ClickHouse 클라이언트 드라이버 커넥션 풀(Connection Pool)이 고갈되었습니다.",
+			RecommendedAction: "클라이언트 max_open_connections/pool_size를 상향하고 쿼리 완료 후 연결/응답 스트림 반환을 확인하세요.",
+		},
+		"BigQueryBytesBilledLimitExceeded": {
+			SummaryTpl:        "BigQuery 쿼리 스캔 바이트 청구 한도(maximum_bytes_billed)를 초과했습니다.",
+			RecommendedAction: "작업 옵션의 maximum_bytes_billed를 상향하거나 파티션 및 클러스터링 필터를 추가하여 스캔 용량을 축소하세요.",
+		},
+		"BigQueryPartitionFilterRequired": {
+			SummaryTpl:        "BigQuery 파티션 테이블 쿼리 시 필수 파티션 필터가 누락되었습니다 (requirePartitionFilter=true).",
+			RecommendedAction: "WHERE 절에 파티션 컬럼(_PARTITIONDATE, _PARTITIONTIME 또는 일자/타임스탬프 필드) 조건을 반드시 명시하세요.",
+		},
+		"BigQueryResponseTooLarge": {
+			SummaryTpl:        "BigQuery 인라인 반환 응답 크기 제한을 초과했습니다 (대용량 결과 집합).",
+			RecommendedAction: "destinationTable을 지정하여 결과를 테이블에 저장하거나 BigQuery Storage Read API를 사용하세요.",
+		},
+		"BigQueryStreamingInsertQuota": {
+			SummaryTpl:        "BigQuery 스트리밍 인서트(insertAll) API 속도 제한 및 할당량을 초과했습니다.",
+			RecommendedAction: "BigQuery Storage Write API로 전환하거나 Cloud Storage 경유 일괄 적재(Load Job)로 전환하세요.",
+		},
+		"BigQueryTableNotFoundInLocation": {
+			SummaryTpl:        "BigQuery 데이터셋/테이블 위치(리전)가 일치하지 않아 쿼리를 실행할 수 없습니다.",
+			RecommendedAction: "클라이언트 쿼리 작업의 location 설정이 대상 데이터셋의 생성 리전과 일치하는지 점검하세요.",
 		},
 		"DiskNoSpaceLeft": {
 			SummaryTpl:        "컨테이너 로컬 파일시스템의 저장 공간이 고갈되었습니다 (ENOSPC).",
@@ -1107,8 +1171,8 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			RecommendedAction: "Check 'pg_stat_activity' for blocking transactions holding conflicting locks.",
 		},
 		"PostgresStatementTimeout": {
-			SummaryTpl:        "PostgreSQL statement canceled due to statement_timeout.",
-			RecommendedAction: "Add indexes or optimize query plan with EXPLAIN ANALYZE.",
+			SummaryTpl:        "PostgreSQL query execution canceled due to statement_timeout limit (SQLState 57014).",
+			RecommendedAction: "Analyze execution plan with EXPLAIN ANALYZE, add missing indexes, and adjust statement_timeout for batch jobs.",
 		},
 		"JenkinsDiskSpaceExhausted": {
 			SummaryTpl:        "Jenkins controller or agent workspace disk space exhausted below threshold.",
@@ -1294,12 +1358,91 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "Squid SslBump dynamic certificate generation or verification failed (ERR_SECURE_ACCEPT_FAIL).",
 			RecommendedAction: "Check squid ssl_crtd helper permissions and private root CA certificate validity.",
 		},
+		"MySQLTooManyConnections": {
+			SummaryTpl:        "MySQL server max_connections limit exceeded, rejecting new client connections (Error 1040).",
+			RecommendedAction: "Increase max_connections in MySQL / my.cnf and limit client connection pool sizes per pod.",
+		},
+		"MySQLDeadlock": {
+			SummaryTpl:        "MySQL InnoDB transaction deadlock detected and transaction was automatically rolled back (Error 1213).",
+			RecommendedAction: "Acquire locks in consistent order across transactions, shorten transaction duration, and apply automatic retries.",
+		},
+		"MySQLLockWaitTimeout": {
+			SummaryTpl:        "MySQL InnoDB lock wait timeout exceeded while waiting for row lock (Error 1205).",
+			RecommendedAction: "Inspect long-running transactions via information_schema.innodb_trx and tune innodb_lock_wait_timeout.",
+		},
+		"MySQLPacketTooLarge": {
+			SummaryTpl:        "MySQL packet bigger than server max_allowed_packet bytes limit (Error 1153).",
+			RecommendedAction: "Increase max_allowed_packet to 64M+ in my.cnf and match driver maxAllowedPacket settings.",
+		},
+		"MySQLCommunicationsLinkFailure": {
+			SummaryTpl:        "MySQL communications link failure due to server wait_timeout expiration or closed socket.",
+			RecommendedAction: "Set connection pool maxLifetime and idleTimeout shorter than MySQL wait_timeout and enable validation query.",
+		},
+		"MySQLReadOnlyMode": {
+			SummaryTpl:        "MySQL server is in read-only mode, rejecting write queries (cluster failover desynchronization).",
+			RecommendedAction: "Ensure connection string targets the cluster primary/writer endpoint and lower DNS caching TTL.",
+		},
+		"PostgresTooManyConnections": {
+			SummaryTpl:        "PostgreSQL connection slots exhausted (SQLState 53300: sorry, too many clients already).",
+			RecommendedAction: "Deploy PgBouncer or connection pooler, and increase max_connections in postgresql.conf.",
+		},
+		"PostgresDeadlock": {
+			SummaryTpl:        "PostgreSQL transaction deadlock detected and query was aborted (SQLState 40P01).",
+			RecommendedAction: "Sort rows by primary key before updating to acquire locks in consistent order, and reduce SELECT FOR UPDATE scope.",
+		},
+		"PostgresInFailedSQLTransaction": {
+			SummaryTpl:        "PostgreSQL transaction aborted due to earlier query failure, subsequent commands ignored (SQLState 25P02).",
+			RecommendedAction: "Issue an explicit ROLLBACK or use SAVEPOINT upon encountering errors within a transaction block.",
+		},
+		"PostgresCannotConnectNow": {
+			SummaryTpl:        "PostgreSQL instance is in recovery mode or starting up, rejecting connections (SQLState 57P03).",
+			RecommendedAction: "Verify WAL replay status in PostgreSQL logs and wait until replica promotion to primary completes.",
+		},
+		"PostgresDiskFull": {
+			SummaryTpl:        "PostgreSQL disk full, unable to extend table or WAL logs (SQLState 53100: No space left on device).",
+			RecommendedAction: "Expand PostgreSQL PVC volume size immediately and clean up orphan replication slots causing WAL accumulation.",
+		},
+		"ClickHouseSimultaneousQueries": {
+			SummaryTpl:        "ClickHouse max concurrent queries limit reached (Code 202: Too many simultaneous queries).",
+			RecommendedAction: "Increase max_concurrent_queries in ClickHouse config.xml or throttle concurrent query submissions from clients.",
+		},
+		"ClickHouseTimeoutExceeded": {
+			SummaryTpl:        "ClickHouse query execution timeout exceeded (Code 159).",
+			RecommendedAction: "Adjust max_execution_time and ensure queries filter on partition and primary order-by keys.",
+		},
+		"ClickHouseConnectionPoolExhausted": {
+			SummaryTpl:        "ClickHouse client driver connection pool exhausted.",
+			RecommendedAction: "Increase client max_open_connections/pool_size and verify that response streams are closed properly.",
+		},
+		"BigQueryBytesBilledLimitExceeded": {
+			SummaryTpl:        "BigQuery query exceeded configured limit for bytes billed (maximum_bytes_billed).",
+			RecommendedAction: "Increase maximum_bytes_billed in job configuration or filter on partitioned and clustered columns.",
+		},
+		"BigQueryPartitionFilterRequired": {
+			SummaryTpl:        "BigQuery partitioned table requires a partition filter over partition columns (requirePartitionFilter=true).",
+			RecommendedAction: "Add partition column (_PARTITIONDATE or timestamp column) conditions to the WHERE clause.",
+		},
+		"BigQueryResponseTooLarge": {
+			SummaryTpl:        "BigQuery query response too large to return with inline results.",
+			RecommendedAction: "Specify a destinationTable for large results or utilize the BigQuery Storage Read API.",
+		},
+		"BigQueryStreamingInsertQuota": {
+			SummaryTpl:        "BigQuery streaming insert quota or rate limit exceeded.",
+			RecommendedAction: "Migrate to BigQuery Storage Write API or batch load via Cloud Storage Load Jobs.",
+		},
+		"BigQueryTableNotFoundInLocation": {
+			SummaryTpl:        "BigQuery table/dataset location mismatch (cross-region queries not allowed).",
+			RecommendedAction: "Verify that client query job location matches the BigQuery dataset creation location.",
+		},
 	},
 }
 
 // Localize resolves localized summary and action for a root cause.
 func Localize(rootCause, lang, defaultSummary, defaultAction, detail string) (string, string) {
-	if defaultSummary != "" && (strings.HasPrefix(defaultSummary, "Python 모듈") ||
+	if defaultSummary != "" && (strings.HasPrefix(defaultSummary, "[") ||
+		strings.HasPrefix(defaultSummary, "MySQL") ||
+		strings.HasPrefix(defaultSummary, "PostgreSQL") ||
+		strings.HasPrefix(defaultSummary, "Python 모듈") ||
 		strings.HasPrefix(defaultSummary, "Pydantic") ||
 		strings.HasPrefix(defaultSummary, "Spring Boot") ||
 		strings.HasPrefix(defaultSummary, "HikariCP") ||

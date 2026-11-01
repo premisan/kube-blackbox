@@ -188,14 +188,10 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 				steps = append(steps, ".NET 애플리케이션에서 System.NullReferenceException 예외가 발생함")
 			}
 			steps = append(steps, "예외가 처리되지 않아 CLR 런타임 프로세스가 종료됨")
-		case "PostgresMaxConnections", "MySQLTooManyConnections":
+		case "PostgresMaxConnections":
 			steps = append(steps, "클라이언트 연결 수가 데이터베이스 서버의 max_connections 한도에 도달함")
 			steps = append(steps, "신규 연결 요청이 거부됨 (FATAL / ERROR 1040)")
 			steps = append(steps, "애플리케이션이 DB 연결 실패로 인해 크래시되거나 헬스체크에 실패함")
-		case "PostgresDeadlock", "MySQLDeadlock":
-			steps = append(steps, "동시 실행 중인 트랜잭션들이 서로 다른 순서로 데이터 락을 획득함")
-			steps = append(steps, "데이터베이스 엔진의 데드락 탐지기가 교착 상태를 감지함")
-			steps = append(steps, "트랜잭션이 롤백되고 애플리케이션 예외로 전파됨")
 		case "RedisOOM":
 			steps = append(steps, "Redis 인메모리 데이터가 maxmemory 한도에 도달함")
 			steps = append(steps, "키 제거(eviction) 정책에 의해 더 이상 메모리를 확보할 수 없음")
@@ -554,6 +550,42 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 			steps = append(steps, "Squid 프록시가 외부 업스트림 서버로 연결 후 응답을 대기함")
 			steps = append(steps, "원격 서버의 응답 지연으로 Squid의 read_timeout 타이머가 만료됨")
 			steps = append(steps, "Squid가 클라이언트에게 HTTP 504 Gateway Timeout (ERR_READ_TIMEOUT)을 반환함")
+		case "MySQLTooManyConnections":
+			steps = append(steps, "애플리케이션 파드가 MySQL 서버에 신규 커넥션 수립을 시도함")
+			steps = append(steps, "MySQL 활성 커넥션 수가 서버의 'max_connections' 한도에 도달함")
+			steps = append(steps, "MySQL 서버가 Error 1040 (ER_CON_COUNT_ERROR)을 반환하며 접속을 차단함")
+		case "MySQLDeadlock":
+			steps = append(steps, "복수의 트랜잭션이 서로 다른 순서로 동일한 데이터 행(Row)에 상호 잠금을 요청함")
+			steps = append(steps, "InnoDB 엔진이 순환 락 대기 상태(Deadlock)를 감지함")
+			steps = append(steps, "InnoDB가 한 트랜잭션을 희생자로 선정하고 Error 1213과 함께 강제 롤백함")
+		case "MySQLCommunicationsLinkFailure":
+			steps = append(steps, "커넥션 풀이 일정 시간 유휴 상태였던 TCP 데이터베이스 소켓을 재사용 시도함")
+			steps = append(steps, "MySQL의 wait_timeout 만료 또는 중간 방화벽에 의해 유휴 소켓이 이미 종료됨")
+			steps = append(steps, "드라이버가 Communications link failure 예외를 발생시키며 쿼리가 실패함")
+		case "PostgresTooManyConnections":
+			steps = append(steps, "다수의 파드 또는 워커가 PostgreSQL 데이터베이스로 동시 연결을 요청함")
+			steps = append(steps, "PostgreSQL 서버의 사용 가능한 커넥션 슬롯(max_connections)이 완전히 고갈됨")
+			steps = append(steps, "PostgreSQL이 FATAL 53300 (sorry, too many clients already) 오류로 신규 접속을 거절함")
+		case "PostgresDeadlock":
+			steps = append(steps, "동시 실행 중인 트랜잭션들이 교차로 락(Lock) 획득을 대기함")
+			steps = append(steps, "PostgreSQL 락 매니저가 deadlock_timeout 경과 후 순환 의존성을 감지함")
+			steps = append(steps, "40P01 deadlock_detected 오류를 발생시키며 현재 트랜잭션을 강제 취소함")
+		case "PostgresInFailedSQLTransaction":
+			steps = append(steps, "트랜잭션 블록 내 이전 쿼리에서 SQL 오류 또는 제약 조건 위반 예외가 발생함")
+			steps = append(steps, "애플리케이션이 ROLLBACK 명령 없이 동일 트랜잭션에서 후속 쿼리 실행을 시도함")
+			steps = append(steps, "PostgreSQL이 트랜잭션 오염 방지를 위해 25P02 in_failed_sql_transaction으로 모든 후속 명령을 거절함")
+		case "ClickHouseSimultaneousQueries":
+			steps = append(steps, "다수의 클라이언트 분석 쿼리가 ClickHouse 서버로 동시 요청됨")
+			steps = append(steps, "ClickHouse의 동시 실행 쿼리 한도(max_concurrent_queries)에 도달함")
+			steps = append(steps, "서버가 Code 202 (TOO_MANY_SIMULTANEOUS_QUERIES) 오류를 반환하며 쿼리를 거부함")
+		case "BigQueryPartitionFilterRequired":
+			steps = append(steps, "파티셔닝이 활성화된 BigQuery 테이블을 대상으로 SQL 쿼리를 실행함")
+			steps = append(steps, "테이블에 requirePartitionFilter=true가 설정되어 있으나 WHERE 절에 파티션 컬럼 조건이 누락됨")
+			steps = append(steps, "BigQuery 엔진이 전체 테이블 스캔 비용을 방지하기 위해 쿼리 실행을 즉시 거절함")
+		case "BigQueryBytesBilledLimitExceeded":
+			steps = append(steps, "클라이언트 쿼리 옵션에 비용 상한선인 maximum_bytes_billed가 지정됨")
+			steps = append(steps, "쿼리가 스캔해야 할 예상 데이터 용량이 설정된 바이트 한도를 초과함")
+			steps = append(steps, "BigQuery가 400 Query exceeded limit for bytes billed 오류를 반환하며 쿼리를 중단함")
 		default:
 			steps = append(steps, fmt.Sprintf("컨테이너 상태 이상이 감지됨 (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -950,6 +982,42 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 			steps = append(steps, "Squid proxy forwarded request to upstream destination and waited for response")
 			steps = append(steps, "Upstream server delayed response beyond Squid read_timeout limit")
 			steps = append(steps, "Squid returned HTTP 504 Gateway Timeout (ERR_READ_TIMEOUT)")
+		case "MySQLTooManyConnections":
+			steps = append(steps, "Application pod attempted to establish a new connection to MySQL server")
+			steps = append(steps, "MySQL active connection count reached server 'max_connections' limit")
+			steps = append(steps, "MySQL server rejected connection with Error 1040 (ER_CON_COUNT_ERROR)")
+		case "MySQLDeadlock":
+			steps = append(steps, "Concurrent transactions acquired mutually conflicting locks on same database rows")
+			steps = append(steps, "InnoDB deadlock detection engine identified cyclic wait-for dependency")
+			steps = append(steps, "InnoDB selected transaction as deadlock victim and forced rollback with Error 1213")
+		case "MySQLCommunicationsLinkFailure":
+			steps = append(steps, "Connection pool attempted to reuse an idle TCP socket")
+			steps = append(steps, "MySQL server or intermediary load balancer closed socket due to wait_timeout expiration")
+			steps = append(steps, "Driver threw Communications link failure exception on query dispatch")
+		case "PostgresTooManyConnections":
+			steps = append(steps, "Multiple application pods requested new connections to PostgreSQL")
+			steps = append(steps, "PostgreSQL available connection slots (max_connections) completely exhausted")
+			steps = append(steps, "PostgreSQL rejected connection with FATAL 53300 (sorry, too many clients already)")
+		case "PostgresDeadlock":
+			steps = append(steps, "Concurrent transactions waited for mutual locks across different tables/rows")
+			steps = append(steps, "PostgreSQL lock manager detected cycle after deadlock_timeout elapsed")
+			steps = append(steps, "PostgreSQL aborted current transaction with 40P01 deadlock_detected")
+		case "PostgresInFailedSQLTransaction":
+			steps = append(steps, "Prior statement inside transaction block encountered an error or constraint violation")
+			steps = append(steps, "Application failed to issue ROLLBACK and attempted next query in same transaction")
+			steps = append(steps, "PostgreSQL blocked all subsequent commands with 25P02 in_failed_sql_transaction")
+		case "ClickHouseSimultaneousQueries":
+			steps = append(steps, "High volume of analytics queries submitted simultaneously to ClickHouse")
+			steps = append(steps, "Server reached configured max_concurrent_queries limit")
+			steps = append(steps, "ClickHouse rejected query with Code 202 (TOO_MANY_SIMULTANEOUS_QUERIES)")
+		case "BigQueryPartitionFilterRequired":
+			steps = append(steps, "SQL query dispatched against partitioned BigQuery table")
+			steps = append(steps, "Table enforce requirePartitionFilter=true but query omitted partition filter")
+			steps = append(steps, "BigQuery optimizer rejected query execution to prevent costly full table scans")
+		case "BigQueryBytesBilledLimitExceeded":
+			steps = append(steps, "Query job submitted with maximum_bytes_billed cost ceiling")
+			steps = append(steps, "Estimated query data scan bytes exceeded the configured limit")
+			steps = append(steps, "BigQuery aborted execution with 400 Query exceeded limit for bytes billed")
 		default:
 			steps = append(steps, fmt.Sprintf("Container termination observed (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -1029,7 +1097,7 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 			return fmt.Sprintf("언어 런타임의 메모리 할당 한도가 초과되었습니다%s.", culpritStr)
 		case "DotNetNullReference":
 			return fmt.Sprintf(".NET 애플리케이션에서 초기화되지 않은 객체 참조(NullReferenceException)가 발생했습니다%s.", culpritStr)
-		case "PostgresMaxConnections", "MySQLTooManyConnections":
+		case "PostgresMaxConnections":
 			return "데이터베이스 서버의 최대 동시 연결 수(max_connections)가 초과되어 신규 커넥션이 거절되었습니다."
 		case "RedisOOM":
 			return "Redis 인메모리 사용량이 maxmemory 한도에 도달하여 신규 쓰기 작업이 거절되었습니다."
@@ -1197,6 +1265,24 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 			return "Squid 프록시 서버에서 목적지 도메인의 DNS 해석에 실패하여 502 Bad Gateway가 발생했습니다."
 		case "ProxyGatewayTimeout":
 			return "Squid 프록시가 업스트림 서버로부터 시간 내에 응답을 받지 못해 504 Gateway Timeout이 발생했습니다."
+		case "MySQLTooManyConnections":
+			return "MySQL 서버 동시 연결 한도(max_connections) 초과로 신규 커넥션이 거부되었습니다 (Error 1040)."
+		case "MySQLDeadlock":
+			return "MySQL InnoDB 트랜잭션 상호 잠금(Deadlock)이 감지되어 트랜잭션이 강제 롤백되었습니다 (Error 1213)."
+		case "MySQLCommunicationsLinkFailure":
+			return "MySQL 유휴 연결 시간(wait_timeout) 초과 또는 소켓 비정상 종료로 통신 링크가 단절되었습니다."
+		case "PostgresTooManyConnections":
+			return "PostgreSQL 연결 슬롯 고갈(max_connections)로 인해 신규 접속이 거부되었습니다 (SQLState 53300)."
+		case "PostgresDeadlock":
+			return "PostgreSQL 트랜잭션 교착 상태(Deadlock)가 감지되어 트랜잭션이 중단되었습니다 (SQLState 40P01)."
+		case "PostgresInFailedSQLTransaction":
+			return "PostgreSQL 트랜잭션 내 이전 오류 발생 후 ROLLBACK 없이 후속 쿼리가 실행되어 명령이 거부되었습니다 (SQLState 25P02)."
+		case "ClickHouseSimultaneousQueries":
+			return "ClickHouse 동시 실행 쿼리 한도(max_concurrent_queries) 초과로 쿼리가 거부되었습니다 (Code 202)."
+		case "BigQueryPartitionFilterRequired":
+			return "BigQuery 파티션 테이블 쿼리 시 필수 파티션 필터가 누락되어 쿼리가 거부되었습니다."
+		case "BigQueryBytesBilledLimitExceeded":
+			return "BigQuery 쿼리 바이트 청구 한도(maximum_bytes_billed)를 초과하여 쿼리 실행이 차단되었습니다."
 		default:
 			return fmt.Sprintf("컨테이너가 %s 원인으로 비정상 종료되었습니다%s.", inc.RootCause, culpritStr)
 		}
@@ -1384,6 +1470,24 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 		return "Squid forward proxy failed upstream domain DNS resolution (HTTP 502 Bad Gateway)."
 	case "ProxyGatewayTimeout":
 		return "Squid forward proxy upstream read timed out (HTTP 504 Gateway Timeout)."
+	case "MySQLTooManyConnections":
+		return "MySQL server max_connections limit exceeded, rejecting new client connections (Error 1040)."
+	case "MySQLDeadlock":
+		return "MySQL InnoDB transaction deadlock detected and rolled back automatically (Error 1213)."
+	case "MySQLCommunicationsLinkFailure":
+		return "MySQL communications link failure due to server wait_timeout expiration or closed socket."
+	case "PostgresTooManyConnections":
+		return "PostgreSQL connection slots exhausted (SQLState 53300: sorry, too many clients already)."
+	case "PostgresDeadlock":
+		return "PostgreSQL transaction deadlock detected and aborted (SQLState 40P01)."
+	case "PostgresInFailedSQLTransaction":
+		return "PostgreSQL transaction aborted due to earlier failure, subsequent commands ignored (SQLState 25P02)."
+	case "ClickHouseSimultaneousQueries":
+		return "ClickHouse max concurrent queries limit reached (Code 202: Too many simultaneous queries)."
+	case "BigQueryPartitionFilterRequired":
+		return "BigQuery partitioned table requires a partition filter over partition columns (requirePartitionFilter=true)."
+	case "BigQueryBytesBilledLimitExceeded":
+		return "BigQuery query exceeded configured limit for bytes billed (maximum_bytes_billed)."
 	default:
 		return fmt.Sprintf("Container terminated due to %s%s.", inc.RootCause, culpritStr)
 	}
@@ -1449,7 +1553,7 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 				return fmt.Sprintf("%s:%d의 참조 대상 객체에 null 조건 연산자(?.) 또는 null 병합 연산자(??)를 적용하세요.", inc.CulpritCode.File, inc.CulpritCode.Line)
 			}
 			return "의존성 주입(DI) 등록 누락 여부를 확인하고 Nullable 참조 형식을 활성화하세요."
-		case "PostgresMaxConnections", "MySQLTooManyConnections":
+		case "PostgresMaxConnections":
 			return "1) PgBouncer 또는 ProxySQL 커넥션 풀러를 도입하세요. 2) DB 서버의 max_connections 파라미터를 증설하세요."
 		case "RedisOOM":
 			return "1) Redis maxmemory 용량을 확장하세요. 2) maxmemory-policy allkeys-lru로 만료 키 제거 정책을 설정하세요."
@@ -1620,6 +1724,24 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 			return "1) Squid 프록시 서버의 '/etc/resolv.conf' 네임서버 및 외부 인터넷 DNS 질의 연결성을 점검하세요. 2) 요청 URL의 호스트명 오탈자를 확인하세요."
 		case "ProxyGatewayTimeout":
 			return "1) Squid 설정의 'read_timeout'(기본 15분) 및 'connect_timeout'을 환경에 맞게 늘리세요. 2) 목적지 서버의 데이터베이스 쿼리 및 애플리케이션 지연을 최적화하세요."
+		case "MySQLTooManyConnections":
+			return "1) MySQL 'max_connections' 설정을 상향하거나 클라우드 파라미터 그룹을 증설하세요:\n```sql\nSET GLOBAL max_connections = 500;\n```\n2) 각 파드의 커넥션 풀 크기(HikariCP maximum-pool-size, SQLAlchemy pool_size)를 파드 복제본 수에 맞게 제한하고 커넥션 누수를 점검하세요."
+		case "MySQLDeadlock":
+			return "1) 복수 테이블/행 갱신 시 접근 순서를 일관되게 정렬(ORDER BY ID)하여 순환 락 대기를 방지하세요. 2) 트랜잭션 범위를 최소화하고 적절한 인덱스를 추가하세요. 3) 데드락 발생 시 Spring @Retryable(CannotAcquireLockException.class) 또는 retry 데코레이터를 적용하세요."
+		case "MySQLCommunicationsLinkFailure":
+			return "1) 커넥션 풀의 maxLifetime 및 idleTimeout을 MySQL의 'wait_timeout'(기본 28800초, 클라우드 권장 300~600초)보다 최소 30초 짧게 설정하세요. 2) connection-test-query('SELECT 1') 또는 keep-alive 유효성 검증을 활성화하세요."
+		case "PostgresTooManyConnections":
+			return "1) PgBouncer 또는 Odyssey 커넥션 풀러를 도입하여 연결을 멀티플렉싱하세요. 2) 'postgresql.conf'의 'max_connections'를 상향 조정하고 파드별 max_connections 할당량을 축소하세요."
+		case "PostgresDeadlock":
+			return "1) 여러 레코드를 수정할 때 항상 기본키(PK) 순으로 정렬하여 락을 획득하도록 쿼리를 수정하세요. 2) 'SELECT FOR UPDATE' 대상 레코드 범위를 축소하고 트랜잭션 보유 시간을 최소화하세요."
+		case "PostgresInFailedSQLTransaction":
+			return "1) 트랜잭션 블록 내에서 쿼리 오류 발생 시 즉시 명시적 ROLLBACK을 수행하거나 세이브포인트(SAVEPOINT)를 활용하세요. 2) ORM 트랜잭션 컨텍스트 매니저 바운더리 및 예외 처리 로직을 점검하세요."
+		case "ClickHouseSimultaneousQueries":
+			return "1) ClickHouse 서버 config.xml의 'max_concurrent_queries'(기본 100)를 상향하세요. 2) 클라이언트 측에서 쿼리를 배치로 묶거나 작업 큐를 도입하여 동시 요청 수를 조절하세요."
+		case "BigQueryPartitionFilterRequired":
+			return "1) 쿼리의 WHERE 절에 대상 테이블의 파티션 컬럼(예: _PARTITIONDATE, _PARTITIONTIME 또는 일자/타임스탬프 필드) 조건을 반드시 포함하세요."
+		case "BigQueryBytesBilledLimitExceeded":
+			return "1) 쿼리 작업 옵션의 'maximum_bytes_billed' 한도를 상향하거나 쿼리에 파티션/클러스터링 필터를 추가하여 스캔 용량을 줄이세요. 2) 'SELECT *' 대신 필요한 컬럼만 명시하세요."
 		default:
 			return "직전 컨테이너 로그 및 종료 코드를 확인하여 애플리케이션 설정 및 파드 리소스 사양을 점검하세요."
 		}
@@ -1806,6 +1928,24 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 		return "1) Inspect /etc/resolv.conf and upstream DNS connectivity on the Squid proxy host. 2) Check destination hostname spelling."
 	case "ProxyGatewayTimeout":
 		return "1) Increase 'read_timeout' and 'connect_timeout' in squid.conf. 2) Optimize upstream server processing latency."
+	case "MySQLTooManyConnections":
+		return "1) Increase max_connections in MySQL / RDS parameter group. 2) Limit client connection pool maximum sizes per pod."
+	case "MySQLDeadlock":
+		return "1) Access rows in consistent order across transactions to prevent lock cycles. 2) Shorten transaction scope and implement automatic retries."
+	case "MySQLCommunicationsLinkFailure":
+		return "1) Set connection pool maxLifetime shorter than MySQL wait_timeout. 2) Enable validation query ('SELECT 1') before socket reuse."
+	case "PostgresTooManyConnections":
+		return "1) Deploy PgBouncer or Odyssey connection pooler. 2) Increase max_connections in postgresql.conf and reduce pool sizes."
+	case "PostgresDeadlock":
+		return "1) Sort rows by primary key before updating to acquire locks in consistent order. 2) Reduce SELECT FOR UPDATE lock scope."
+	case "PostgresInFailedSQLTransaction":
+		return "1) Issue explicit ROLLBACK or use SAVEPOINT upon catching errors within a transaction block. 2) Fix transaction manager boundary."
+	case "ClickHouseSimultaneousQueries":
+		return "1) Increase 'max_concurrent_queries' in ClickHouse config.xml. 2) Batch client queries or queue them to throttle concurrency."
+	case "BigQueryPartitionFilterRequired":
+		return "1) Include partition column (_PARTITIONDATE or timestamp column) conditions in the WHERE clause."
+	case "BigQueryBytesBilledLimitExceeded":
+		return "1) Increase maximum_bytes_billed in job configuration or filter on partitioned and clustered columns. 2) Avoid SELECT *."
 	default:
 		return "Inspect previous container logs and verify pod resource limits and application configurations."
 	}

@@ -1217,6 +1217,54 @@ func AnalyzeLogs(logs string) *LogAnalysisResult {
 }
 
 func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSnippet string) *LogAnalysisResult {
+	// 0. Database & Multi-Language Driver Deep Analysis (MySQL, PostgreSQL, ClickHouse, BigQuery)
+	dbDriverDeep := knowledge.AnalyzeDBDriverLogs(processedLogs)
+	if dbDriverDeep != nil {
+		if res == nil || res.MatchedRule == nil {
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "DBDriver_" + dbDriverDeep.Database,
+					Category:          "Dependency",
+					RootCause:         dbDriverDeep.RootCause,
+					Confidence:        "High",
+					RecommendedAction: dbDriverDeep.SuggestedFixKo,
+				},
+				MatchedPattern: "DBDriver_" + dbDriverDeep.Database,
+				Category:       "Dependency",
+				Snippet:        tailSnippet,
+			}
+		} else {
+			res.MatchedRule.RootCause = dbDriverDeep.RootCause
+			res.Category = "Dependency"
+		}
+		res.ErrorClass = dbDriverDeep.ErrorClass
+		if dbDriverDeep.SummaryKo != "" {
+			res.Summary = dbDriverDeep.SummaryKo
+		}
+		if dbDriverDeep.SuggestedFixKo != "" {
+			res.RecommendedAction = dbDriverDeep.SuggestedFixKo
+		}
+
+		// Preserve exact culprit code (file & line) if language-specific stack trace exists
+		if dbDriverDeep.DriverLang == "python" && strings.Contains(processedLogs, "Traceback (most recent call last):") {
+			if pyDeep := knowledge.AnalyzePythonDeepCrash(processedLogs); pyDeep != nil && pyDeep.CulpritCode != nil {
+				res.CulpritCode = pyDeep.CulpritCode
+				res.ErrorLocation = fmt.Sprintf("%s:%d", pyDeep.CulpritCode.File, pyDeep.CulpritCode.Line)
+			}
+		} else if dbDriverDeep.DriverLang == "java" && strings.Contains(processedLogs, "at ") {
+			if javaDeep := knowledge.AnalyzeJavaDeepCrash(processedLogs); javaDeep != nil && javaDeep.CulpritCode != nil {
+				res.CulpritCode = javaDeep.CulpritCode
+				res.ErrorLocation = fmt.Sprintf("%s:%d", javaDeep.CulpritCode.File, javaDeep.CulpritCode.Line)
+			}
+		} else if dbDriverDeep.DriverLang == "nodejs" && strings.Contains(processedLogs, "at ") {
+			if nodeDeep := knowledge.AnalyzeNodeDeepCrash(processedLogs); nodeDeep != nil && nodeDeep.CulpritCode != nil {
+				res.CulpritCode = nodeDeep.CulpritCode
+				res.ErrorLocation = fmt.Sprintf("%s:%d", nodeDeep.CulpritCode.File, nodeDeep.CulpritCode.Line)
+			}
+		}
+		return res
+	}
+
 	// 1. Python Deep Analysis
 	if strings.Contains(processedLogs, "Traceback (most recent call last):") || strings.Contains(processedLogs, "Fatal Python error:") {
 		pyDeep := knowledge.AnalyzePythonDeepCrash(processedLogs)

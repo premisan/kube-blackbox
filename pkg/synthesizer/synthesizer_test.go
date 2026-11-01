@@ -455,3 +455,59 @@ func TestSynthesizer_TLSUntrustedCA(t *testing.T) {
 
 
 
+
+func TestSynthesizer_MySQLDeadlock(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "sample-mysql-deadlock",
+		ContainerName: "order-service",
+		ExitCode:      &exitCode,
+		RootCause:     "MySQLDeadlock",
+		Category:      "Dependency",
+		Confidence:    "High",
+		ErrorClass:    "MySQL_1213_Deadlock",
+		Language:      "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 steps, got %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.SuggestedFix, "@Retryable") {
+		t.Fatalf("expected fix to mention @Retryable, got: %s", result.SuggestedFix)
+	}
+}
+
+func TestSynthesizer_PostgresInFailedSQLTransaction(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "sample-postgres-failed-tx",
+		ContainerName: "backend",
+		ExitCode:      &exitCode,
+		RootCause:     "PostgresInFailedSQLTransaction",
+		Category:      "Dependency",
+		Confidence:    "High",
+		ErrorClass:    "PostgreSQL_25P02_InFailedTx",
+		Language:      "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 steps, got %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.SuggestedFix, "ROLLBACK") {
+		t.Fatalf("expected fix to mention ROLLBACK, got: %s", result.SuggestedFix)
+	}
+}
