@@ -852,6 +852,42 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "BigQuery 데이터셋/테이블 위치(리전)가 일치하지 않아 쿼리를 실행할 수 없습니다.",
 			RecommendedAction: "클라이언트 쿼리 작업의 location 설정이 대상 데이터셋의 생성 리전과 일치하는지 점검하세요.",
 		},
+		"PHPMemoryLimitExceeded": {
+			SummaryTpl:        "PHP 스크립트 실행 메모리 한도(memory_limit)를 초과하여 프로세스가 중단되었습니다.",
+			RecommendedAction: "php.ini에서 memory_limit를 256M 이상으로 증설하거나 대용량 데이터 쿼리를 chunk 단위로 분할하세요.",
+		},
+		"PHPMaxExecutionTimeExceeded": {
+			SummaryTpl:        "PHP 스크립트 최대 실행 시간(max_execution_time)이 초과되어 강제 종료되었습니다.",
+			RecommendedAction: "php.ini의 max_execution_time을 늘리거나 백그라운드 작업에 set_time_limit(0)을 설정하세요.",
+		},
+		"PHPUndefinedFunction": {
+			SummaryTpl:        "정의되지 않은 PHP 함수 호출로 치명적 오류가 발생했습니다 (익스텐션 누락 또는 오탈자).",
+			RecommendedAction: "Dockerfile에서 필요한 PHP 확장 모듈(docker-php-ext-install)을 설치 및 활성화하세요.",
+		},
+		"PHPClassNotFound": {
+			SummaryTpl:        "PHP 클래스를 찾을 수 없습니다 (Composer 오토로더 누락 또는 네임스페이스 오류).",
+			RecommendedAction: "composer dump-autoload -o를 실행하여 클래스맵을 갱신하고 vendor/autoload.php 포함 여부를 확인하세요.",
+		},
+		"PHPFPMChildrenExhausted": {
+			SummaryTpl:        "PHP-FPM 워커 풀(pm.max_children)이 고갈되어 신규 웹 요청 처리가 차단되었습니다.",
+			RecommendedAction: "php-fpm.d/www.conf에서 pm.max_children을 증설하고 느린 쿼리를 최적화하여 워커 점유 시간을 단축하세요.",
+		},
+		"PHPFPMChildSignalCrash": {
+			SummaryTpl:        "PHP-FPM 워커가 네이티브 C 확장 모듈의 메모리 침범(SIGSEGV/SIGBUS)으로 충돌 종료되었습니다.",
+			RecommendedAction: "PHP C 확장 모듈 버전 호환성을 점검하고 코어 덤프를 분석하세요.",
+		},
+		"PHPPDOException": {
+			SummaryTpl:        "PHP PDO 데이터베이스 연결 실패 또는 SQL 실행 오류가 발생했습니다.",
+			RecommendedAction: "DB 접속 환경변수(호스트, 포트, 계정) 및 K8s Service 연결 상태를 점검하세요.",
+		},
+		"PHPUnhandledException": {
+			SummaryTpl:        "PHP 미처리 예외가 발생하여 스크립트가 비정상 종료되었습니다.",
+			RecommendedAction: "예외 발생 소스코드 위치를 확인하고 try-catch 블록으로 예외 처리를 추가하세요.",
+		},
+		"PHPSyntaxError": {
+			SummaryTpl:        "PHP 구문 오류(Syntax Error)로 인해 스크립트 파싱에 실패했습니다.",
+			RecommendedAction: "오류 발생 파일의 문법을 수정하고 빌드 파이프라인에서 'php -l' 린트를 수행하세요.",
+		},
 		"DiskNoSpaceLeft": {
 			SummaryTpl:        "컨테이너 로컬 파일시스템의 저장 공간이 고갈되었습니다 (ENOSPC).",
 			RecommendedAction: "임시 파일을 정리하거나 파드의 ephemeral-storage 할당량을 증설하세요.",
@@ -1434,12 +1470,49 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "BigQuery table/dataset location mismatch (cross-region queries not allowed).",
 			RecommendedAction: "Verify that client query job location matches the BigQuery dataset creation location.",
 		},
+		"PHPMemoryLimitExceeded": {
+			SummaryTpl:        "PHP memory_limit exhausted, terminating script execution.",
+			RecommendedAction: "Increase memory_limit in php.ini to 256M+ or chunk large query datasets.",
+		},
+		"PHPMaxExecutionTimeExceeded": {
+			SummaryTpl:        "PHP maximum execution time of script exceeded.",
+			RecommendedAction: "Increase max_execution_time in php.ini or call set_time_limit(0) in background workers.",
+		},
+		"PHPUndefinedFunction": {
+			SummaryTpl:        "Fatal error calling undefined PHP function (missing extension or typo).",
+			RecommendedAction: "Install missing PHP extensions in Dockerfile using docker-php-ext-install.",
+		},
+		"PHPClassNotFound": {
+			SummaryTpl:        "PHP class not found (missing Composer autoloader or namespace mismatch).",
+			RecommendedAction: "Run 'composer dump-autoload -o' and ensure vendor/autoload.php is required.",
+		},
+		"PHPFPMChildrenExhausted": {
+			SummaryTpl:        "PHP-FPM worker pool exhausted (pm.max_children reached), blocking incoming requests.",
+			RecommendedAction: "Increase pm.max_children in php-fpm.d/www.conf and optimize slow database queries.",
+		},
+		"PHPFPMChildSignalCrash": {
+			SummaryTpl:        "PHP-FPM worker process crashed on signal SIGSEGV/SIGBUS (native C module memory fault).",
+			RecommendedAction: "Check compatibility of PHP native C extensions and inspect core dumps.",
+		},
+		"PHPPDOException": {
+			SummaryTpl:        "PHP PDO database connection error or query execution failure.",
+			RecommendedAction: "Verify database credentials, host DNS, port, and Kubernetes Service availability.",
+		},
+		"PHPUnhandledException": {
+			SummaryTpl:        "Unhandled PHP exception caused script termination.",
+			RecommendedAction: "Inspect error location and wrap failing operations in try-catch blocks.",
+		},
+		"PHPSyntaxError": {
+			SummaryTpl:        "PHP syntax parse error prevented script compilation.",
+			RecommendedAction: "Fix syntax error at the referenced line and validate with 'php -l'.",
+		},
 	},
 }
 
 // Localize resolves localized summary and action for a root cause.
 func Localize(rootCause, lang, defaultSummary, defaultAction, detail string) (string, string) {
 	if defaultSummary != "" && (strings.HasPrefix(defaultSummary, "[") ||
+		strings.HasPrefix(defaultSummary, "PHP") ||
 		strings.HasPrefix(defaultSummary, "MySQL") ||
 		strings.HasPrefix(defaultSummary, "PostgreSQL") ||
 		strings.HasPrefix(defaultSummary, "Python 모듈") ||

@@ -1394,6 +1394,52 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 		}
 	}
 
+	// 3.5. PHP CLI / FPM / Framework Deep Analysis
+	if strings.Contains(processedLogs, "PHP Fatal error:") || strings.Contains(processedLogs, "Fatal error:") || strings.Contains(processedLogs, "PHP-FPM") || strings.Contains(processedLogs, "[pool ") || strings.Contains(processedLogs, "PDOException") || strings.Contains(processedLogs, "Parse error:") {
+		phpDeep := knowledge.AnalyzePHPDeepCrash(processedLogs)
+		if phpDeep != nil {
+			category := "Application"
+			rootCause := phpDeep.ErrorClass
+			if phpDeep.ErrorClass == "PHPUndefinedFunction" || phpDeep.ErrorClass == "PHPClassNotFound" || phpDeep.ErrorClass == "PHPSyntaxError" {
+				category = "Configuration"
+			} else if phpDeep.ErrorClass == "PHPFPMChildrenExhausted" {
+				category = "Infrastructure"
+			} else if phpDeep.ErrorClass == "PHPPDOException" {
+				category = "Dependency"
+			}
+
+			if res == nil || res.MatchedRule == nil {
+				res = &LogAnalysisResult{
+					MatchedRule: &LogRule{
+						Name:              "PHPDeepCrash_" + phpDeep.ErrorClass,
+						Category:          category,
+						RootCause:         rootCause,
+						Confidence:        "High",
+						RecommendedAction: phpDeep.SuggestedFixKo,
+					},
+					MatchedPattern: "PHPDeepCrash_" + phpDeep.ErrorClass,
+					Category:       category,
+					Snippet:        tailSnippet,
+				}
+			} else {
+				res.MatchedRule.RootCause = rootCause
+				res.Category = category
+			}
+			res.ErrorClass = phpDeep.ErrorClass
+			if phpDeep.CulpritCode != nil {
+				res.CulpritCode = phpDeep.CulpritCode
+				res.ErrorLocation = fmt.Sprintf("%s:%d", phpDeep.CulpritCode.File, phpDeep.CulpritCode.Line)
+			}
+			if phpDeep.SummaryKo != "" {
+				res.Summary = phpDeep.SummaryKo
+			}
+			if phpDeep.SuggestedFixKo != "" {
+				res.RecommendedAction = phpDeep.SuggestedFixKo
+			}
+			return res
+		}
+	}
+
 	// 4. Service Mesh, Ingress & Envoy Deep Analysis
 	meshDeep := knowledge.AnalyzeMeshLogs(processedLogs)
 	if meshDeep != nil {
