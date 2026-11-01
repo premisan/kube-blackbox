@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-tls-untrusted-ca
+  labels:
+    app: sample-tls-untrusted-ca
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: secure-client
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Initiating TLS handshake with internal vault: https://vault.internal.corp:8200..."
+          echo "javax.net.ssl.SSLHandshakeException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target" >&2
+          echo "x509: certificate signed by unknown authority (possibly because of \"crypto/rsa: verification error\" while trying to verify candidate authority certificate \"Internal Enterprise Root CA\")" >&2
+          echo "[FATAL] SSL/TLS handshake failed: remote certificate authority is untrusted or missing from trust store." >&2
+          exit 1

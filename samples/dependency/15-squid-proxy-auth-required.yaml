@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-squid-proxy-auth-required
+  labels:
+    app: sample-squid-proxy-auth-required
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: egress-worker
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Forwarding egress HTTP request via squid proxy 10.0.0.50:3128..."
+          echo "HTTP/1.1 407 Proxy Authentication Required" >&2
+          echo "X-Squid-Error: ERR_CACHE_ACCESS_DENIED 0" >&2
+          echo "Proxy-Authenticate: Basic realm=\"Squid proxy-caching web server\"" >&2
+          echo "[FATAL] Request rejected by egress proxy: 407 Proxy Authentication Required. Credentials missing or invalid." >&2
+          exit 1

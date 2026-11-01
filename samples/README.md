@@ -1,6 +1,6 @@
 # Kube-Blackbox Failure Simulation Samples
 
-이 디렉토리는 `kube-blackbox`의 다차원 진단 엔진과 원인 사슬(Root Cause Chain) 합성을 검증하기 위한 **34종의 카테고리별 실전 재시작 샘플 파드**를 제공합니다.
+이 디렉토리는 `kube-blackbox`의 다차원 진단 엔진과 원인 사슬(Root Cause Chain) 합성을 검증하기 위한 **38종의 카테고리별 실전 재시작 샘플 파드**를 제공합니다.
 
 모든 샘플 파드는 쿠버네티스 표준 공식 경량 이미지(`busybox`, `alpine`, `python:3.11-alpine`, `node:18-alpine`, `amazoncorretto:17-alpine`)를 사용하며, 실제 운영 환경에서 발생하는 장애 시나리오를 재현합니다.
 
@@ -47,8 +47,8 @@
 | `06-nginx-ingress-syntax-error.yaml` | `sample-nginx-syntax-error` | `NginxConfigSyntaxError` | Ingress-Nginx 설정 문법 오류(`nginx: [emerg]`)로 인한 기동 실패 |
 | `07-kyverno-policy-violation.yaml` | `sample-kyverno-violation` | `KyvernoAdmissionPolicyViolation` | Kyverno ClusterPolicy 검증 규칙 위반으로 인한 어드미션 웹훅 생성 거절 |
 
-### 4. `samples/dependency/` (외부 의존성, 클라우드 SDK, 서비스 메시, LLM 및 빅데이터 연쇄 장애)
-데이터베이스, 메시지 브로커, Istio 메시, Envoy 프록시 서킷 브레이커, Vault 봉인, Gemini API 할당량, ClickHouse 파트 초과, LiteLLM 속도 제한 장애를 다룹니다.
+### 4. `samples/dependency/` (외부 의존성, 네트워크, TLS, Egress 프록시, 서비스 메시 및 클라우드 SDK 장애)
+데이터베이스, 메시지 브로커, TCP RST, TLS 인증서 체인, Squid Egress 프록시, Istio 메시, Envoy 서킷 브레이커, Vault 봉인, Gemini API 할당량, ClickHouse 파트 초과, LiteLLM 속도 제한 장애를 다룹니다.
 
 | 파일명 | 파드명 | 진단 원인 (Root Cause) | 주요 시나리오 |
 | :--- | :--- | :--- | :--- |
@@ -64,6 +64,10 @@
 | `10-gcp-gemini-quota.yaml` | `sample-gemini-quota` | `GCPGeminiQuotaExceeded` | Google Gemini API 429 ResourceExhausted (분당 요청/토큰 쿼터 초과) |
 | `11-clickhouse-too-many-parts.yaml` | `sample-clickhouse-parts` | `ClickHouseTooManyParts` | ClickHouse 고빈도 소형 INSERT로 인한 300+ 파트 머지 백프레셔 쓰기 차단 |
 | `12-litellm-rate-limit.yaml` | `sample-litellm-ratelimit` | `LiteLLMRateLimitExceeded` | LiteLLM 프록시 연결 업스트림 LLM 프로바이더 429 속도 제한(TPM/RPM) 초과 |
+| `13-network-connection-reset.yaml` | `sample-network-conn-reset` | `TCPConnectionReset` | 소켓 통신 중 원격 피어/방화벽에 의한 RST 패킷 수신 및 연결 강제 종료(`ECONNRESET`) |
+| `14-tls-untrusted-ca.yaml` | `sample-tls-untrusted-ca` | `TLSUntrustedCA` | 사설/자체서명 CA 인증서 미신뢰(`PKIX path building failed`, `x509: certificate signed by unknown authority`) |
+| `15-squid-proxy-auth-required.yaml` | `sample-squid-proxy-auth-required` | `SquidProxyAuthRequired` | Egress 프록시 인증 누락/실패(`407 Proxy Authentication Required`, `ERR_CACHE_ACCESS_DENIED`) |
+| `16-squid-proxy-acl-denied.yaml` | `sample-squid-proxy-acl-denied` | `SquidProxyACLDenied` | Egress Squid 프록시 ACL 정책에 의한 외부 도메인/포트 차단(`403 Forbidden`, `ERR_ACCESS_DENIED`) |
 
 ---
 
