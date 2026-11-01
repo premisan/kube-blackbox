@@ -22,6 +22,7 @@ type DiagnosticInput struct {
 	ContainerStatus *corev1.ContainerStatus
 	Events          []corev1.Event
 	PreviousLogs    string
+	Language        string // Target localization language ("en", "ko", "ja", etc.)
 }
 
 // Diagnose evaluates container termination status, events, logs, and pod specs to deduce root cause.
@@ -29,12 +30,14 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 	var evidence observerv1alpha1.Evidence
 	var diagnosis observerv1alpha1.Diagnosis
 
+	lang := input.Language
+	if lang == "" {
+		lang = "en"
+	}
+
 	cs := input.ContainerStatus
 	if cs == nil {
-		diagnosis.Category = "Unknown"
-		diagnosis.RootCause = "Unknown"
-		diagnosis.Confidence = "Low"
-		diagnosis.Summary = "No container status available"
+		setDiag(&diagnosis, "Unknown", "Unknown", "Low", "No container status available", "Ensure container exists in pod status", lang, "")
 		return diagnosis, evidence
 	}
 
@@ -69,39 +72,37 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 		evidence.MatchedLogPattern = logRes.MatchedPattern
 		evidence.ErrorClass = logRes.ErrorClass
 		evidence.ErrorLocation = logRes.ErrorLocation
+		evidence.CulpritCode = logRes.CulpritCode
 	}
 
 	// ==================== Step 1: Explicit Kernel & Runtime Termination ====================
 	if termState != nil {
 		// OOMKilled by cgroup/kernel
 		if termState.Reason == "OOMKilled" || (termState.ExitCode == 137 && termState.Reason == "OOMKilled") {
-			diagnosis.Category = "Infrastructure"
-			diagnosis.RootCause = "OOMKilled"
-			diagnosis.Confidence = "High"
-			diagnosis.Summary = "Container exceeded memory limit and was killed by Linux kernel OOM killer (cgroup memory exhaustion)."
-			diagnosis.RecommendedAction = "Increase memory limit in pod spec (resources.limits.memory) or analyze memory leaks."
+			setDiag(&diagnosis, "Infrastructure", "OOMKilled", "High",
+				"Container exceeded memory limit and was killed by Linux kernel OOM killer (cgroup memory exhaustion).",
+				"Increase memory limit in pod spec (resources.limits.memory) or analyze memory leaks.",
+				lang, "")
 			evidence.ErrorClass = "LinuxOOMKiller"
 			return diagnosis, evidence
 		}
 
 		// Exit code 126: Permission denied
 		if termState.ExitCode == 126 {
-			diagnosis.Category = "Configuration"
-			diagnosis.RootCause = "PermissionDenied"
-			diagnosis.Confidence = "High"
-			diagnosis.Summary = "Container entrypoint binary lacks execute permission (Exit code 126)."
-			diagnosis.RecommendedAction = "Add execution permissions (chmod +x) to entrypoint binary/script in Dockerfile."
+			setDiag(&diagnosis, "Configuration", "PermissionDenied", "High",
+				"Container entrypoint binary lacks execute permission (Exit code 126).",
+				"Add execution permissions (chmod +x) to entrypoint binary/script in Dockerfile.",
+				lang, "")
 			evidence.ErrorClass = "ExecPermissionDenied"
 			return diagnosis, evidence
 		}
 
 		// Exit code 127: Command not found
 		if termState.ExitCode == 127 {
-			diagnosis.Category = "Configuration"
-			diagnosis.RootCause = "CommandNotFound"
-			diagnosis.Confidence = "High"
-			diagnosis.Summary = "Container entrypoint executable or command was not found in image PATH (Exit code 127)."
-			diagnosis.RecommendedAction = "Verify entrypoint path in Dockerfile and ensure required shell/binaries exist in base image."
+			setDiag(&diagnosis, "Configuration", "CommandNotFound", "High",
+				"Container entrypoint executable or command was not found in image PATH (Exit code 127).",
+				"Verify entrypoint path in Dockerfile and ensure required shell/binaries exist in base image.",
+				lang, "")
 			evidence.ErrorClass = "BinaryNotFound"
 			return diagnosis, evidence
 		}
@@ -109,21 +110,15 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 
 	// ==================== Step 2: Kubernetes Events Correlation ====================
 	if eventRes != nil && eventRes.MatchedRule != nil {
-		diagnosis.Category = eventRes.Category
-		diagnosis.RootCause = eventRes.MatchedRule.RootCause
-		diagnosis.Confidence = eventRes.MatchedRule.Confidence
-		diagnosis.Summary = eventRes.Summary
-		diagnosis.RecommendedAction = eventRes.RecommendedAction
+		setDiag(&diagnosis, eventRes.Category, eventRes.MatchedRule.RootCause, eventRes.MatchedRule.Confidence,
+			eventRes.Summary, eventRes.RecommendedAction, lang, "")
 		return diagnosis, evidence
 	}
 
 	// ==================== Step 3: Deep Log Signature Pattern Matching ====================
 	if logRes != nil && logRes.MatchedRule != nil {
-		diagnosis.Category = logRes.Category
-		diagnosis.RootCause = logRes.MatchedRule.RootCause
-		diagnosis.Confidence = logRes.MatchedRule.Confidence
-		diagnosis.Summary = logRes.Summary
-		diagnosis.RecommendedAction = logRes.RecommendedAction
+		setDiag(&diagnosis, logRes.Category, logRes.MatchedRule.RootCause, logRes.MatchedRule.Confidence,
+			logRes.MatchedRule.SummaryTpl, logRes.MatchedRule.RecommendedAction, lang, logRes.ErrorLocation)
 		return diagnosis, evidence
 	}
 
@@ -133,81 +128,80 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 		case 137: // SIGKILL (128 + 9)
 			// Check if container has memory limits defined and logs contain memory error
 			if hasMemoryLimit(input.Pod, input.ContainerName) && containsMemoryKeywords(input.PreviousLogs) {
-				diagnosis.Category = "Infrastructure"
-				diagnosis.RootCause = "ProbableOOMKilled"
-				diagnosis.Confidence = "High"
-				diagnosis.Summary = "Container killed with SIGKILL (137) with memory limit defined and memory exhaustion indicators in log."
-				diagnosis.RecommendedAction = "Increase pod memory limit (resources.limits.memory) or optimize memory consumption."
+				setDiag(&diagnosis, "Infrastructure", "ProbableOOMKilled", "High",
+					"Container killed with SIGKILL (137) with memory limit defined and memory exhaustion indicators in log.",
+					"Increase pod memory limit (resources.limits.memory) or optimize memory consumption.",
+					lang, "")
 				evidence.ErrorClass = "ProbableOOM"
 				return diagnosis, evidence
 			}
 
-			diagnosis.Category = "Infrastructure"
-			diagnosis.RootCause = "SigkillTerminated"
-			diagnosis.Confidence = "Medium"
-			diagnosis.Summary = "Process killed by SIGKILL (Exit code 137). Typically unrecorded OOM, probe timeout, or forced eviction."
-			diagnosis.RecommendedAction = "Inspect node dmesg logs for OOM killer events or check if liveness probes timed out."
+			setDiag(&diagnosis, "Infrastructure", "SigkillTerminated", "Medium",
+				"Process killed by SIGKILL (Exit code 137). Typically unrecorded OOM, probe timeout, or forced eviction.",
+				"Inspect node dmesg logs for OOM killer events or check if liveness probes timed out.",
+				lang, "")
 			return diagnosis, evidence
 
 		case 143: // SIGTERM (128 + 15)
-			diagnosis.Category = "Infrastructure"
-			diagnosis.RootCause = "SigtermShutdown"
-			diagnosis.Confidence = "Medium"
-			diagnosis.Summary = "Process received SIGTERM (Exit code 143) and terminated gracefully during deployment rollout, scaling, or node drain."
-			diagnosis.RecommendedAction = "Normal during pod recreation. If unexpected, check deployment revision history or node maintenance."
+			setDiag(&diagnosis, "Infrastructure", "SigtermShutdown", "Medium",
+				"Process received SIGTERM (Exit code 143) and terminated gracefully during deployment rollout, scaling, or node drain.",
+				"Normal during pod recreation. If unexpected, check deployment revision history or node maintenance.",
+				lang, "")
 			return diagnosis, evidence
 
 		case 139: // SIGSEGV (128 + 11)
-			diagnosis.Category = "Application"
-			diagnosis.RootCause = "SegmentationFault"
-			diagnosis.Confidence = "High"
-			diagnosis.Summary = "Process crashed due to segmentation fault (SIGSEGV, Exit code 139)."
-			diagnosis.RecommendedAction = "Check native C/C++ libraries, unsafe pointers, or corrupt shared memory objects."
+			setDiag(&diagnosis, "Application", "SegmentationFault", "High",
+				"Process crashed due to segmentation fault (SIGSEGV, Exit code 139).",
+				"Check native C/C++ libraries, unsafe pointers, or corrupt shared memory objects.",
+				lang, "")
 			evidence.ErrorClass = "SIGSEGV"
 			return diagnosis, evidence
 
 		case 134: // SIGABRT (128 + 6)
-			diagnosis.Category = "Application"
-			diagnosis.RootCause = "NativeAbort"
-			diagnosis.Confidence = "High"
-			diagnosis.Summary = "Process aborted by SIGABRT (Exit code 134), often caused by glibc assertion or panic in native code."
-			diagnosis.RecommendedAction = "Check native assertions or check if application called abort()."
+			setDiag(&diagnosis, "Application", "NativeAbort", "High",
+				"Process aborted by SIGABRT (Exit code 134), often caused by glibc assertion or panic in native code.",
+				"Check native assertions or check if application called abort().",
+				lang, "")
 			evidence.ErrorClass = "SIGABRT"
 			return diagnosis, evidence
 
 		case 1:
-			diagnosis.Category = "Application"
-			diagnosis.RootCause = "ApplicationRuntimeError"
-			diagnosis.Confidence = "Medium"
-			diagnosis.Summary = "Application process exited with general error code 1."
-			diagnosis.RecommendedAction = "Inspect standard error stream in container logs for unhandled application exceptions."
+			setDiag(&diagnosis, "Application", "ApplicationRuntimeError", "Medium",
+				"Application process exited with general error code 1.",
+				"Inspect standard error stream in container logs for unhandled application exceptions.",
+				lang, "")
 			return diagnosis, evidence
 
 		case 0:
-			diagnosis.Category = "Application"
-			diagnosis.RootCause = "ProcessExitedNormally"
-			diagnosis.Confidence = "Medium"
-			diagnosis.Summary = "Container main process completed execution with exit code 0 without maintaining a persistent foreground daemon."
-			diagnosis.RecommendedAction = "Ensure entrypoint command runs in foreground (e.g. nginx -g 'daemon off;' instead of nginx)."
+			setDiag(&diagnosis, "Application", "ProcessExitedNormally", "Medium",
+				"Container main process completed execution with exit code 0 without maintaining a persistent foreground daemon.",
+				"Ensure entrypoint command runs in foreground (e.g. nginx -g 'daemon off;' instead of nginx).",
+				lang, "")
 			return diagnosis, evidence
 
 		default:
-			diagnosis.Category = "Unknown"
-			diagnosis.RootCause = "UnclassifiedExitCode"
-			diagnosis.Confidence = "Low"
-			diagnosis.Summary = fmt.Sprintf("Container terminated with exit code %d (Reason: %s).", termState.ExitCode, termState.Reason)
-			diagnosis.RecommendedAction = fmt.Sprintf("Check application documentation for specific meaning of exit code %d.", termState.ExitCode)
+			summary := fmt.Sprintf("Container terminated with exit code %d (Reason: %s).", termState.ExitCode, termState.Reason)
+			recAction := fmt.Sprintf("Check application documentation for specific meaning of exit code %d.", termState.ExitCode)
+			setDiag(&diagnosis, "Unknown", "UnclassifiedExitCode", "Low", summary, recAction, lang, "")
 			return diagnosis, evidence
 		}
 	}
 
 	// Completely Unknown
-	diagnosis.Category = "Unknown"
-	diagnosis.RootCause = "Unknown"
-	diagnosis.Confidence = "Low"
-	diagnosis.Summary = "Unable to determine root cause from available metrics, events, or logs."
-	diagnosis.RecommendedAction = "Enable debug logging in container and verify cluster monitoring."
+	setDiag(&diagnosis, "Unknown", "Unknown", "Low",
+		"Unable to determine root cause from available metrics, events, or logs.",
+		"Enable debug logging in container and verify cluster monitoring.",
+		lang, "")
 	return diagnosis, evidence
+}
+
+func setDiag(d *observerv1alpha1.Diagnosis, category, rootCause, confidence, defaultSummary, defaultAction, lang, detail string) {
+	d.Category = category
+	d.RootCause = rootCause
+	d.Confidence = confidence
+	summary, action := Localize(rootCause, lang, defaultSummary, defaultAction, detail)
+	d.Summary = summary
+	d.RecommendedAction = action
 }
 
 func hasMemoryLimit(pod *corev1.Pod, containerName string) bool {

@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	observerv1alpha1 "github.com/premisan/kube-pinger/api/v1alpha1"
+	"github.com/premisan/kube-pinger/pkg/ai"
 	"github.com/premisan/kube-pinger/pkg/analyzer"
 )
 
@@ -381,4 +382,100 @@ func TestPodReconciler_StatefulSetRecreationCollisionAvoidance(t *testing.T) {
 	if len(list.Items) != 2 {
 		t.Fatalf("expected 2 CRs, got %d", len(list.Items))
 	}
+}
+
+func TestPodReconciler_MultilingualAndAI(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = observerv1alpha1.AddToScheme(scheme)
+
+	exitCode := int32(137)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "korean-pod",
+			Namespace: "default",
+			UID:       "kr-uid-12345",
+			Annotations: map[string]string{
+				"observer.io/language": "ko",
+			},
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "app-worker",
+					RestartCount: 1,
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode:   exitCode,
+							Reason:     "OOMKilled",
+							FinishedAt: metav1.Now(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	fakeClient := clientfake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(pod).
+		WithStatusSubresource(&observerv1alpha1.PodRestartHistory{}).
+		Build()
+
+	fakeKube := fake.NewSimpleClientset()
+
+	aiEng := ai.NewEmbeddedEngine("test-ai-model")
+	reconciler := &PodReconciler{
+		Client:          fakeClient,
+		KubeClient:      fakeKube,
+		Scheme:          scheme,
+		Engine:          analyzer.NewDiagnosticEngine(),
+		AIEngine:        aiEng,
+		DefaultLanguage: "en", // Pod annotation "ko" should override this
+	}
+
+	req := ctrl.Request{NamespacedName: client.ObjectKey{Namespace: "default", Name: "korean-pod"}}
+	res, err := reconciler.Reconcile(context.Background(), req)
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	if res.Requeue {
+		t.Fatalf("unexpected requeue")
+	}
+
+	crName := GenerateCRName("korean-pod", "kr-uid-12345", "app-worker", 1)
+	var cr observerv1alpha1.PodRestartHistory
+	if err := fakeClient.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: crName}, &cr); err != nil {
+		t.Fatalf("failed to fetch created CR: %v", err)
+	}
+
+	// Verify Korean translation in summary
+	if cr.Status.Diagnosis.Summary == "" || !containsKoreanChar(cr.Status.Diagnosis.Summary) {
+		t.Fatalf("expected Korean summary in CR, got: %s", cr.Status.Diagnosis.Summary)
+	}
+
+	// Give async AI analysis goroutine a moment to update CR status
+	time.Sleep(100 * time.Millisecond)
+
+	if err := fakeClient.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: crName}, &cr); err != nil {
+		t.Fatalf("failed to re-fetch created CR: %v", err)
+	}
+	if cr.Status.AIInsight == nil {
+		t.Fatalf("expected AIInsight to be populated by async worker")
+	}
+	if cr.Status.AIInsight.Language != "ko" {
+		t.Fatalf("expected AIInsight language ko, got: %s", cr.Status.AIInsight.Language)
+	}
+	if len(cr.Status.AIInsight.RootCauseChain) == 0 {
+		t.Fatalf("expected RootCauseChain in AIInsight")
+	}
+}
+
+func containsKoreanChar(s string) bool {
+	for _, r := range s {
+		if r >= 0xAC00 && r <= 0xD7A3 {
+			return true
+		}
+	}
+	return false
 }

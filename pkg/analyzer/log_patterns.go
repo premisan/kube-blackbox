@@ -2,7 +2,10 @@ package analyzer
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
+
+	observerv1alpha1 "github.com/premisan/kube-pinger/api/v1alpha1"
 )
 
 type LogRule struct {
@@ -15,6 +18,7 @@ type LogRule struct {
 	RecommendedAction string
 	ExtractClass      func(match []string) string
 	ExtractLocation   func(logs string) string
+	ExtractCulprit    func(logs string) *observerv1alpha1.CulpritCode
 }
 
 var logRules = []LogRule{
@@ -51,6 +55,7 @@ var logRules = []LogRule{
 		RecommendedAction: "Increase JVM -Xmx heap limit, increase Pod memory limit, or profile memory leaks with heap dump.",
 		ExtractClass:      func(m []string) string { return "OutOfMemoryError" },
 		ExtractLocation:   extractJavaLocation,
+		ExtractCulprit:    extractJavaCulprit,
 	},
 	{
 		Name:              "JVMMetaspaceOOM",
@@ -82,6 +87,7 @@ var logRules = []LogRule{
 		RecommendedAction: "Inspect recursion logic in the call stack or increase thread stack size (-Xss).",
 		ExtractClass:      func(m []string) string { return "StackOverflowError" },
 		ExtractLocation:   extractJavaLocation,
+		ExtractCulprit:    extractJavaCulprit,
 	},
 	{
 		Name:              "SpringBootStartupFailure",
@@ -93,6 +99,7 @@ var logRules = []LogRule{
 		RecommendedAction: "Inspect Spring Boot configuration properties (application.yml) and missing bean dependencies.",
 		ExtractClass:      func(m []string) string { return "BeanCreationException" },
 		ExtractLocation:   extractJavaLocation,
+		ExtractCulprit:    extractJavaCulprit,
 	},
 
 	// ==================== Python ====================
@@ -126,9 +133,10 @@ var logRules = []LogRule{
 		RecommendedAction: "Inspect the Python exception traceback in the error snippet and wrap in try-except.",
 		ExtractClass:      extractPythonExceptionClass,
 		ExtractLocation:   extractPythonLocation,
+		ExtractCulprit:    extractPythonCulprit,
 	},
 
-	// ==================== Node.js / JavaScript ====================
+	// ==================== Node.js / JavaScript / TypeScript ====================
 	{
 		Name:              "NodeHeapOOM",
 		Category:          "Application",
@@ -158,6 +166,8 @@ var logRules = []LogRule{
 		SummaryTpl:        "Node.js crashed due to uncaught promise rejection or unhandled exception",
 		RecommendedAction: "Add .catch() to unhandled promises or wrap asynchronous calls in try/catch.",
 		ExtractClass:      func(m []string) string { return "UnhandledPromiseRejection" },
+		ExtractLocation:   extractNodeLocation,
+		ExtractCulprit:    extractNodeCulprit,
 	},
 
 	// ==================== Go (Golang) ====================
@@ -171,6 +181,7 @@ var logRules = []LogRule{
 		RecommendedAction: "Check mutex lock/unlock sequences and channel send/receive synchronization logic.",
 		ExtractClass:      func(m []string) string { return "Deadlock" },
 		ExtractLocation:   extractGoLocation,
+		ExtractCulprit:    extractGoCulprit,
 	},
 	{
 		Name:              "GoConcurrentMapAccess",
@@ -182,6 +193,7 @@ var logRules = []LogRule{
 		RecommendedAction: "Use sync.RWMutex to protect map access or replace with sync.Map.",
 		ExtractClass:      func(m []string) string { return "ConcurrentMapAccess" },
 		ExtractLocation:   extractGoLocation,
+		ExtractCulprit:    extractGoCulprit,
 	},
 	{
 		Name:              "GoPanic",
@@ -193,6 +205,91 @@ var logRules = []LogRule{
 		RecommendedAction: "Inspect call stack for nil pointer dereference, slice bounds out of range, or unhandled errors.",
 		ExtractClass:      func(m []string) string { return "Panic" },
 		ExtractLocation:   extractGoLocation,
+		ExtractCulprit:    extractGoCulprit,
+	},
+
+	// ==================== .NET / C# ====================
+	{
+		Name:              "DotNetNullReference",
+		Category:          "Application",
+		RootCause:         "DotNetNullReference",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?i)System\.NullReferenceException:\s*Object reference not set to an instance of an object`),
+		SummaryTpl:        ".NET NullReferenceException: Object reference not set to an instance of an object",
+		RecommendedAction: "Verify that object instances are initialized before accessing members or use C# null-conditional operator (?.).",
+		ExtractClass:      func(m []string) string { return "NullReferenceException" },
+		ExtractLocation:   extractDotNetLocation,
+		ExtractCulprit:    extractDotNetCulprit,
+	},
+	{
+		Name:              "DotNetOOM",
+		Category:          "Application",
+		RootCause:         "DotNetOOM",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?i)System\.OutOfMemoryException`),
+		SummaryTpl:        ".NET runtime exhausted managed memory (System.OutOfMemoryException)",
+		RecommendedAction: "Check Large Object Heap (LOH) allocations or increase container memory limits.",
+		ExtractClass:      func(m []string) string { return "OutOfMemoryException" },
+	},
+	{
+		Name:              "DotNetUnhandled",
+		Category:          "Application",
+		RootCause:         "DotNetUnhandledException",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?i)Unhandled exception\.\s*(System\.[a-zA-Z0-9_\.]+)`),
+		SummaryTpl:        "Unhandled .NET exception: %s",
+		RecommendedAction: "Inspect exception stack trace and add top-level try/catch or ASP.NET Core exception middleware.",
+		ExtractClass:      func(m []string) string { return "DotNetException" },
+		ExtractLocation:   extractDotNetLocation,
+		ExtractCulprit:    extractDotNetCulprit,
+	},
+
+	// ==================== PHP ====================
+	{
+		Name:              "PHPMemoryExhausted",
+		Category:          "Application",
+		RootCause:         "PHPMemoryExhausted",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?i)Fatal error:\s*Allowed memory size of (\d+) bytes exhausted`),
+		SummaryTpl:        "PHP memory limit exhausted: %s bytes",
+		RecommendedAction: "Increase memory_limit in php.ini or refactor memory-intensive loops.",
+		ExtractClass:      func(m []string) string { return "MemoryExhausted" },
+		ExtractLocation:   extractPHPLocation,
+		ExtractCulprit:    extractPHPCulprit,
+	},
+	{
+		Name:              "PHPUncaughtError",
+		Category:          "Application",
+		RootCause:         "PHPUncaughtError",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?i)Fatal error:\s*Uncaught (?:Error|Exception):\s*(.+)`),
+		SummaryTpl:        "PHP fatal uncaught error: %s",
+		RecommendedAction: "Check PHP script error and implement global try-catch exception handling.",
+		ExtractClass:      func(m []string) string { return "FatalError" },
+		ExtractLocation:   extractPHPLocation,
+		ExtractCulprit:    extractPHPCulprit,
+	},
+
+	// ==================== Ruby ====================
+	{
+		Name:              "RubyNoMemoryError",
+		Category:          "Application",
+		RootCause:         "RubyNoMemoryError",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?m)(?:NoMemoryError|failed to allocate memory)`),
+		SummaryTpl:        "Ruby process exhausted available memory (NoMemoryError)",
+		RecommendedAction: "Profile heap object allocation in Ruby/Rails and increase pod memory limits.",
+		ExtractClass:      func(m []string) string { return "NoMemoryError" },
+	},
+	{
+		Name:              "RubySystemStackError",
+		Category:          "Application",
+		RootCause:         "RubySystemStackError",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`SystemStackError:\s*stack level too deep`),
+		SummaryTpl:        "Ruby call stack overflow (SystemStackError: stack level too deep)",
+		RecommendedAction: "Inspect recursive methods or cyclic method calls in Rails models/controllers.",
+		ExtractClass:      func(m []string) string { return "SystemStackError" },
 	},
 
 	// ==================== Rust ====================
@@ -229,6 +326,40 @@ var logRules = []LogRule{
 		ExtractClass:      func(m []string) string { return "SIGABRT" },
 	},
 
+	// ==================== Web Proxy / Ingress (Nginx, Envoy) ====================
+	{
+		Name:              "NginxWorkerConnections",
+		Category:          "Infrastructure",
+		RootCause:         "NginxWorkerConnections",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?i)worker_connections are not enough`),
+		SummaryTpl:        "Nginx exhausted worker connections limit under high concurrency load",
+		RecommendedAction: "Increase worker_connections and worker_processes in nginx.conf or scale out replicas.",
+		ExtractClass:      func(m []string) string { return "WorkerConnectionsExhausted" },
+	},
+
+	// ==================== Database & Cache ====================
+	{
+		Name:              "RedisOOM",
+		Category:          "Application",
+		RootCause:         "RedisOOM",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?i)OOM command not allowed when used memory > 'maxmemory'`),
+		SummaryTpl:        "Redis reached maxmemory limit; write commands rejected with OOM",
+		RecommendedAction: "Increase Redis maxmemory or configure eviction policy (e.g. maxmemory-policy allkeys-lru).",
+		ExtractClass:      func(m []string) string { return "RedisOOM" },
+	},
+	{
+		Name:              "DiskNoSpaceLeft",
+		Category:          "Infrastructure",
+		RootCause:         "DiskNoSpaceLeft",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?i)(?:no space left on device|ENOSPC)`),
+		SummaryTpl:        "Container local filesystem ran out of storage space (ENOSPC: No space left on device)",
+		RecommendedAction: "Clean temporary files or increase pod ephemeral-storage requests/limits.",
+		ExtractClass:      func(m []string) string { return "ENOSPC" },
+	},
+
 	// ==================== Network & Dependencies ====================
 	{
 		Name:              "AddressAlreadyInUse",
@@ -239,6 +370,16 @@ var logRules = []LogRule{
 		SummaryTpl:        "Port binding conflict detected: %s",
 		RecommendedAction: "Change the container listen port or verify no zombie process is occupying the port.",
 		ExtractClass:      func(m []string) string { return "EADDRINUSE" },
+	},
+	{
+		Name:              "DNSLookupFailed",
+		Category:          "Dependency",
+		RootCause:         "DNSLookupFailed",
+		Confidence:        "High",
+		Regex:             regexp.MustCompile(`(?i)dial tcp:\s*lookup\s*([a-zA-Z0-9_\.-]+):\s*no such host`),
+		SummaryTpl:        "DNS lookup failed for hostname: %s",
+		RecommendedAction: "Check CoreDNS status, verify service name and cluster DNS configuration.",
+		ExtractClass:      func(m []string) string { return "DNSNotFound" },
 	},
 	{
 		Name:              "DBAuthFailed",
@@ -288,6 +429,7 @@ type LogAnalysisResult struct {
 	Category          string
 	ErrorClass        string
 	ErrorLocation     string
+	CulpritCode       *observerv1alpha1.CulpritCode
 	Snippet           string
 	Summary           string
 	RecommendedAction string
@@ -299,11 +441,14 @@ func AnalyzeLogs(logs string) *LogAnalysisResult {
 		return nil
 	}
 
-	lines := strings.Split(logs, "\n")
-	tailSnippet := extractTailSnippet(lines, 12)
+	// 1. Preprocess structured JSON logs if present
+	processedLogs := PreprocessLogs(logs)
+
+	lines := strings.Split(processedLogs, "\n")
+	tailSnippet := extractTailSnippet(lines, 15)
 
 	for _, rule := range logRules {
-		if loc := rule.Regex.FindStringSubmatch(logs); len(loc) > 0 {
+		if loc := rule.Regex.FindStringSubmatch(processedLogs); len(loc) > 0 {
 			matched := loc[0]
 			detail := matched
 			for k := 1; k < len(loc); k++ {
@@ -325,7 +470,12 @@ func AnalyzeLogs(logs string) *LogAnalysisResult {
 
 			var errLocation string
 			if rule.ExtractLocation != nil {
-				errLocation = rule.ExtractLocation(logs)
+				errLocation = rule.ExtractLocation(processedLogs)
+			}
+
+			var culprit *observerv1alpha1.CulpritCode
+			if rule.ExtractCulprit != nil {
+				culprit = rule.ExtractCulprit(processedLogs)
 			}
 
 			return &LogAnalysisResult{
@@ -334,6 +484,7 @@ func AnalyzeLogs(logs string) *LogAnalysisResult {
 				Category:          rule.Category,
 				ErrorClass:        errClass,
 				ErrorLocation:     errLocation,
+				CulpritCode:       culprit,
 				Snippet:           tailSnippet,
 				Summary:           summary,
 				RecommendedAction: rule.RecommendedAction,
@@ -369,25 +520,50 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// Helper location extractors
+// Regex helpers for locations
 var (
-	goLocRegex     = regexp.MustCompile(`(?m)^\t(.+?\.(?:go|s):\d+)`)
-	pythonLocRegex = regexp.MustCompile(`File "([^"]+)", line (\d+)`)
-	javaLocRegex   = regexp.MustCompile(`\(([^)]+?\.(?:java|kt):\d+)\)`)
-	pyClassRegex   = regexp.MustCompile(`(?m)^([a-zA-Z_]\w*(?:Error|Exception|Warning)):\s*(.*)$`)
+	goLocRegex     = regexp.MustCompile(`(?m)^\t(.+?\.(?:go|s)):(\d+)`)
+	pythonLocRegex = regexp.MustCompile(`File "([^"]+)", line (\d+)(?:, in (\w+))?`)
+	javaLocRegex   = regexp.MustCompile(`at\s+([a-zA-Z0-9_\.$]+)\(([a-zA-Z0-9_\.]+\.java):(\d+)\)`)
+	nodeLocRegex   = regexp.MustCompile(`at\s+(?:.+?\s+\()?([^()\s]+?\.(?:js|ts|mjs)):(\d+):(\d+)\)?`)
+	dotNetLocRegex = regexp.MustCompile(`at\s+([^\(\n]+)\(.*?\) in (.+?\.(?:cs|fs)):line (\d+)`)
+	phpLocRegex    = regexp.MustCompile(`in (.+?\.php) on line (\d+)`)
 )
 
 func extractGoLocation(logs string) string {
 	matches := goLocRegex.FindAllStringSubmatch(logs, -1)
 	if len(matches) > 0 {
 		raw := matches[0][1]
+		line := matches[0][2]
 		parts := strings.Split(raw, "/")
-		if len(parts) > 0 {
-			return parts[len(parts)-1]
-		}
-		return raw
+		fileName := parts[len(parts)-1]
+		return fileName + ":" + line
 	}
 	return ""
+}
+
+func extractGoCulprit(logs string) *observerv1alpha1.CulpritCode {
+	matches := goLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	for _, m := range matches {
+		filePath := m[1]
+		lineStr := m[2]
+		// Skip Go standard library runtime files
+		if strings.Contains(filePath, "runtime/") || strings.Contains(filePath, "testing/") {
+			continue
+		}
+		lineNum, _ := strconv.Atoi(lineStr)
+		parts := strings.Split(filePath, "/")
+		fileName := parts[len(parts)-1]
+		return &observerv1alpha1.CulpritCode{
+			Language: "Go",
+			File:     fileName,
+			Line:     lineNum,
+		}
+	}
+	return nil
 }
 
 func extractPythonLocation(logs string) string {
@@ -401,6 +577,40 @@ func extractPythonLocation(logs string) string {
 	return ""
 }
 
+func extractPythonCulprit(logs string) *observerv1alpha1.CulpritCode {
+	matches := pythonLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	// Walk backwards to find the last user code frame before crash
+	for i := len(matches) - 1; i >= 0; i-- {
+		m := matches[i]
+		filePath := m[1]
+		// Skip python internal site-packages if possible
+		if strings.Contains(filePath, "site-packages") || strings.Contains(filePath, "lib/python") {
+			continue
+		}
+		lineNum, _ := strconv.Atoi(m[2])
+		parts := strings.Split(filePath, "/")
+		return &observerv1alpha1.CulpritCode{
+			Language: "Python",
+			File:     parts[len(parts)-1],
+			Line:     lineNum,
+			Function: m[3],
+		}
+	}
+	// Fallback to last frame
+	last := matches[len(matches)-1]
+	lineNum, _ := strconv.Atoi(last[2])
+	parts := strings.Split(last[1], "/")
+	return &observerv1alpha1.CulpritCode{
+		Language: "Python",
+		File:     parts[len(parts)-1],
+		Line:     lineNum,
+		Function: last[3],
+	}
+}
+
 func extractPythonExceptionClass(matches []string) string {
 	return "PythonException"
 }
@@ -408,7 +618,129 @@ func extractPythonExceptionClass(matches []string) string {
 func extractJavaLocation(logs string) string {
 	matches := javaLocRegex.FindAllStringSubmatch(logs, -1)
 	if len(matches) > 0 {
-		return matches[0][1]
+		return matches[0][2] + ":" + matches[0][3]
 	}
 	return ""
+}
+
+func extractJavaCulprit(logs string) *observerv1alpha1.CulpritCode {
+	matches := javaLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	// Walk through stack to find user code (ignoring Spring/JDK internal calls)
+	for _, m := range matches {
+		fullPkg := m[1]
+		fileName := m[2]
+		lineStr := m[3]
+		if strings.HasPrefix(fullPkg, "org.springframework.") ||
+			strings.HasPrefix(fullPkg, "java.") ||
+			strings.HasPrefix(fullPkg, "sun.") ||
+			strings.HasPrefix(fullPkg, "jdk.") ||
+			strings.HasPrefix(fullPkg, "org.apache.") {
+			continue
+		}
+		lineNum, _ := strconv.Atoi(lineStr)
+		return &observerv1alpha1.CulpritCode{
+			Language:  "Java",
+			Framework: "Spring",
+			File:      fileName,
+			Line:      lineNum,
+			Function:  fullPkg,
+		}
+	}
+	// Fallback to first line
+	first := matches[0]
+	lineNum, _ := strconv.Atoi(first[3])
+	return &observerv1alpha1.CulpritCode{
+		Language: "Java",
+		File:     first[2],
+		Line:     lineNum,
+		Function: first[1],
+	}
+}
+
+func extractNodeLocation(logs string) string {
+	matches := nodeLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) > 0 {
+		parts := strings.Split(matches[0][1], "/")
+		return parts[len(parts)-1] + ":" + matches[0][2]
+	}
+	return ""
+}
+
+func extractNodeCulprit(logs string) *observerv1alpha1.CulpritCode {
+	matches := nodeLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	for _, m := range matches {
+		filePath := m[1]
+		if strings.Contains(filePath, "node_modules") {
+			continue
+		}
+		lineNum, _ := strconv.Atoi(m[2])
+		parts := strings.Split(filePath, "/")
+		return &observerv1alpha1.CulpritCode{
+			Language: "JavaScript/TypeScript",
+			File:     parts[len(parts)-1],
+			Line:     lineNum,
+		}
+	}
+	return nil
+}
+
+func extractDotNetLocation(logs string) string {
+	matches := dotNetLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) > 0 {
+		parts := strings.Split(matches[0][2], "/")
+		if len(parts) == 1 {
+			parts = strings.Split(matches[0][2], "\\")
+		}
+		return parts[len(parts)-1] + ":" + matches[0][3]
+	}
+	return ""
+}
+
+func extractDotNetCulprit(logs string) *observerv1alpha1.CulpritCode {
+	matches := dotNetLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	first := matches[0]
+	lineNum, _ := strconv.Atoi(first[3])
+	parts := strings.Split(first[2], "/")
+	if len(parts) == 1 {
+		parts = strings.Split(first[2], "\\")
+	}
+	return &observerv1alpha1.CulpritCode{
+		Language: ".NET/C#",
+		File:     parts[len(parts)-1],
+		Line:     lineNum,
+		Function: strings.TrimSpace(first[1]),
+	}
+}
+
+func extractPHPLocation(logs string) string {
+	matches := phpLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) > 0 {
+		parts := strings.Split(matches[0][1], "/")
+		return parts[len(parts)-1] + ":" + matches[0][2]
+	}
+	return ""
+}
+
+func extractPHPCulprit(logs string) *observerv1alpha1.CulpritCode {
+	matches := phpLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	first := matches[0]
+	lineNum, _ := strconv.Atoi(first[2])
+	parts := strings.Split(first[1], "/")
+	return &observerv1alpha1.CulpritCode{
+		Language: "PHP",
+		File:     parts[len(parts)-1],
+		Line:     lineNum,
+	}
 }

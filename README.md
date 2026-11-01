@@ -62,13 +62,21 @@ kube-pinger/
 │   └── rbac/
 │       └── rbac.yaml                           # RBAC manifests
 ├── pkg/
+│   ├── ai/                                     # Semantic reasoning & multi-language engine
+│   │   ├── embedded.go
+│   │   ├── engine.go
+│   │   ├── http.go
+│   │   └── types.go
 │   ├── analyzer/                               # Rule-based diagnostic engine
 │   │   ├── analyzer.go
 │   │   ├── analyzer_test.go
 │   │   ├── events.go                           # Event correlation & filtering
-│   │   └── log_patterns.go                     # Previous log regex rules
+│   │   ├── i18n.go                             # Multi-language dictionary
+│   │   ├── log_patterns.go                     # Deep log signatures & culprit code extraction
+│   │   ├── log_preprocess.go                   # JSON structured log unpacker
+│   │   └── log_preprocess_test.go
 │   └── controller/
-│       ├── pod_controller.go                   # Pod Watcher & Reconciler
+│       ├── pod_controller.go                   # Pod Watcher & Async AI Reconciler
 │       └── pod_controller_test.go
 ├── samples/                                    # Sample crash pods for testing
 │   ├── 01-oomkilled.yaml                       # Triggers cgroup OOMKilled
@@ -122,10 +130,14 @@ Check real-time controller logs (Active Leader will show `Successfully acquired 
 kubectl logs -f deployment/kube-pinger-controller-manager -n kube-pinger-system
 ```
 
-### Controller Retention & HA Configuration Flags
+### Controller Retention, HA & AI Configuration Flags
 
-Kube-Pinger includes built-in HA and safeguards to protect etcd from flooding:
+Kube-Pinger includes built-in HA, AI semantic reasoning, and safeguards to protect etcd from flooding:
 - **`--leader-elect`** (Default: `true`): Enables Active-Standby leader election via Kubernetes Leases for safe multi-replica deployments.
+- **`--analysis-language`** (Default: `en`): Primary reporting language for diagnoses and AI insights (`en`, `ko`, `ja`, etc.). Can be overridden globally via `ANALYSIS_LANGUAGE` env var or per-pod via `observer.io/language` annotation.
+- **`--enable-ai`** (Default: `true`): Enables asynchronous semantic reasoning to produce detailed failure cascades (`rootCauseChain`) and actionable code fixes (`suggestedFix`).
+- **`--ai-provider`** (Default: `embedded`): Supported options: `embedded` (offline, zero-latency, no external server or GPU required), `ollama`, `http`, `openai`.
+- **`--log-tail-lines`** (Default: `500`): Maximum lines of previous container logs collected for analysis.
 - **`--max-history-per-container`** (Default: `5`): Keeps only the latest 5 restart records per container. When a container enters `CrashLoopBackOff`, older records are automatically pruned.
 - **`--history-ttl`** (Default: `168h` / 7 days): Background GC worker periodically cleans up records older than 7 days. Pod restart records remain accessible even if the pod or spot node is deleted during cluster scaling or maintenance.
 

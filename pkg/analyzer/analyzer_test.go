@@ -376,3 +376,103 @@ func TestDiagnose_VolumeMountFailure(t *testing.T) {
 		t.Fatalf("expected Category Infrastructure, got %s", diag.Category)
 	}
 }
+
+func TestDiagnose_DotNetNullReference(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+	logs := `Unhandled exception. System.NullReferenceException: Object reference not set to an instance of an object.
+   at OrderService.Controllers.OrdersController.Get(Int32 id) in /src/Controllers/OrdersController.cs:line 42
+   at Microsoft.AspNetCore.Mvc.Infrastructure.ActionMethodExecutor.Execute`
+
+	input := DiagnosticInput{
+		ContainerName: "dotnet-api",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "dotnet-api",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "DotNetNullReference" {
+		t.Fatalf("expected DotNetNullReference, got %s", diag.RootCause)
+	}
+	if ev.CulpritCode == nil {
+		t.Fatalf("expected CulpritCode, got nil")
+	}
+	if ev.CulpritCode.File != "OrdersController.cs" || ev.CulpritCode.Line != 42 {
+		t.Fatalf("expected OrdersController.cs:42, got %s:%d", ev.CulpritCode.File, ev.CulpritCode.Line)
+	}
+}
+
+func TestDiagnose_JSONLogs_Unpacking(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(2)
+	// Log emitted by uber-go/zap in JSON format
+	logs := `{"level":"info","ts":1600000000,"msg":"Starting server"}
+{"level":"fatal","ts":1600000001,"msg":"runtime error","stacktrace":"panic: runtime error: invalid memory address or nil pointer dereference\n\tmain.go:88"}`
+
+	input := DiagnosticInput{
+		ContainerName: "zap-worker",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "zap-worker",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "GoPanic" {
+		t.Fatalf("expected GoPanic, got %s", diag.RootCause)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.Line != 88 {
+		t.Fatalf("expected CulpritCode line 88, got %v", ev.CulpritCode)
+	}
+}
+
+func TestDiagnose_Multilingual_Korean(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(137)
+	input := DiagnosticInput{
+		ContainerName: "app",
+		Language:      "ko",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "app",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+					Reason:   "OOMKilled",
+				},
+			},
+		},
+	}
+
+	diag, _ := engine.Diagnose(input)
+	if diag.RootCause != "OOMKilled" {
+		t.Fatalf("expected RootCause OOMKilled, got %s", diag.RootCause)
+	}
+	// Verify Korean translation
+	if !containsKorean(diag.Summary) {
+		t.Fatalf("expected Korean summary, got: %s", diag.Summary)
+	}
+	if !containsKorean(diag.RecommendedAction) {
+		t.Fatalf("expected Korean recommended action, got: %s", diag.RecommendedAction)
+	}
+}
+
+func containsKorean(s string) bool {
+	for _, r := range s {
+		if r >= 0xAC00 && r <= 0xD7A3 {
+			return true
+		}
+	}
+	return false
+}

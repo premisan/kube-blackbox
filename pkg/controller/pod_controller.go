@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	observerv1alpha1 "github.com/premisan/kube-pinger/api/v1alpha1"
+	"github.com/premisan/kube-pinger/pkg/ai"
 	"github.com/premisan/kube-pinger/pkg/analyzer"
 )
 
@@ -32,6 +33,9 @@ type PodReconciler struct {
 	KubeClient             kubernetes.Interface
 	Scheme                 *runtime.Scheme
 	Engine                 *analyzer.DiagnosticEngine
+	AIEngine               ai.AIEngine
+	DefaultLanguage        string
+	LogTailLines           int64
 	MaxHistoryPerContainer int
 	HistoryTTL             time.Duration
 }
@@ -80,12 +84,22 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		prevLogs := r.fetchPreviousLogs(ctx, pod.Namespace, pod.Name, cs.Name)
 		events := r.fetchPodEvents(ctx, pod.Namespace, pod.Name)
 
+		// Determine target language (pod annotation > controller default > en)
+		targetLang := r.DefaultLanguage
+		if langAnno, ok := pod.Annotations["observer.io/language"]; ok && langAnno != "" {
+			targetLang = langAnno
+		}
+		if targetLang == "" {
+			targetLang = "en"
+		}
+
 		diagInput := analyzer.DiagnosticInput{
 			Pod:             &pod,
 			ContainerName:   cs.Name,
 			ContainerStatus: &cs,
 			Events:          events,
 			PreviousLogs:    prevLogs,
+			Language:        targetLang,
 		}
 
 		diagnosis, evidence := r.Engine.Diagnose(diagInput)
@@ -104,7 +118,8 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 					"observer.io/container-name": sanitizeLabelValue(cs.Name),
 				},
 				Annotations: map[string]string{
-					"observer.io/pod-uid": string(pod.UID),
+					"observer.io/pod-uid":  string(pod.UID),
+					"observer.io/language": targetLang,
 				},
 			},
 			Spec: observerv1alpha1.PodRestartHistorySpec{
@@ -146,13 +161,81 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			"category", diagnosis.Category,
 			"rootCause", diagnosis.RootCause,
 			"confidence", diagnosis.Confidence,
+			"language", targetLang,
 		)
+
+		// Trigger asynchronous AI deep semantic analysis if enabled
+		if r.AIEngine != nil {
+			go r.triggerAIAnalysis(context.Background(), newCR.Namespace, newCR.Name, pod, cs, diagnosis, evidence, prevLogs, events, targetLang)
+		}
 
 		// Prune older histories exceeding MaxHistoryPerContainer
 		r.pruneExcessHistories(ctx, pod.Namespace, pod.Name, cs.Name)
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// triggerAIAnalysis runs in a background goroutine to perform deep AI reasoning without blocking the reconcile loop.
+func (r *PodReconciler) triggerAIAnalysis(
+	ctx context.Context,
+	namespace, crName string,
+	pod corev1.Pod,
+	cs corev1.ContainerStatus,
+	diagnosis observerv1alpha1.Diagnosis,
+	evidence observerv1alpha1.Evidence,
+	logs string,
+	events []corev1.Event,
+	lang string,
+) {
+	logger := log.FromContext(ctx).WithValues("crName", crName)
+
+	var matchedEvStrings []string
+	for _, ev := range events {
+		matchedEvStrings = append(matchedEvStrings, ev.Message)
+	}
+
+	inc := ai.IncidentContext{
+		Namespace:         namespace,
+		PodName:           pod.Name,
+		ContainerName:     cs.Name,
+		ExitCode:          evidence.ExitCode,
+		TerminationReason: evidence.TerminationReason,
+		Category:          diagnosis.Category,
+		RootCause:         diagnosis.RootCause,
+		Confidence:        diagnosis.Confidence,
+		MatchedEvents:     matchedEvStrings,
+		LastLogs:          logs,
+		Language:          lang,
+		CulpritCode:       evidence.CulpritCode,
+	}
+
+	insight, err := r.AIEngine.Analyze(ctx, inc)
+	if err != nil || insight == nil {
+		logger.Error(err, "Failed to run AI analysis")
+		return
+	}
+
+	var targetCR observerv1alpha1.PodRestartHistory
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: crName}, &targetCR); err != nil {
+		logger.Error(err, "Failed to fetch CR for updating AI insight")
+		return
+	}
+
+	targetCR.Status.AIInsight = &observerv1alpha1.AIInsight{
+		Model:           insight.Model,
+		Analyzed:        insight.Analyzed,
+		Language:        insight.Language,
+		Confidence:      insight.Confidence,
+		InferredContext: insight.InferredContext,
+		SuggestedFix:    insight.SuggestedFix,
+		RootCauseChain:  insight.RootCauseChain,
+	}
+
+	if err := r.Status().Update(ctx, &targetCR); err != nil {
+		_ = r.Update(ctx, &targetCR)
+	}
+	logger.Info("Successfully updated AI Insight for PodRestartHistory", "crName", crName, "model", insight.Model)
 }
 
 // pruneExcessHistories deletes older PodRestartHistory records exceeding MaxHistoryPerContainer
@@ -271,7 +354,10 @@ func (r *PodReconciler) fetchPreviousLogs(ctx context.Context, namespace, podNam
 	if r.KubeClient == nil {
 		return ""
 	}
-	tailLines := int64(100)
+	tailLines := r.LogTailLines
+	if tailLines <= 0 {
+		tailLines = 500
+	}
 	req := r.KubeClient.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
@@ -349,7 +435,7 @@ func PodRestartPredicate() predicate.Predicate {
 			if !ok {
 				return false
 			}
-			return hasRestarts(pod)
+			return hasAnyRestarts(pod)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldPod, okOld := e.ObjectOld.(*corev1.Pod)
@@ -357,7 +443,7 @@ func PodRestartPredicate() predicate.Predicate {
 			if !okOld || !okNew {
 				return false
 			}
-			return totalRestarts(newPod) > totalRestarts(oldPod)
+			return getHighestRestartCount(newPod) > getHighestRestartCount(oldPod)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
@@ -368,34 +454,37 @@ func PodRestartPredicate() predicate.Predicate {
 	}
 }
 
-func hasRestarts(pod *corev1.Pod) bool {
-	return totalRestarts(pod) > 0
-}
-
-func totalRestarts(pod *corev1.Pod) int32 {
-	var count int32
+func hasAnyRestarts(pod *corev1.Pod) bool {
 	for _, cs := range pod.Status.ContainerStatuses {
-		count += cs.RestartCount
+		if cs.RestartCount > 0 {
+			return true
+		}
 	}
 	for _, cs := range pod.Status.InitContainerStatuses {
-		count += cs.RestartCount
+		if cs.RestartCount > 0 {
+			return true
+		}
 	}
-	return count
+	return false
 }
 
+func getHighestRestartCount(pod *corev1.Pod) int32 {
+	var max int32
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.RestartCount > max {
+			max = cs.RestartCount
+		}
+	}
+	for _, cs := range pod.Status.InitContainerStatuses {
+		if cs.RestartCount > max {
+			max = cs.RestartCount
+		}
+	}
+	return max
+}
+
+// SetupWithManager sets up the controller with the Manager.
 func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if r.MaxHistoryPerContainer <= 0 {
-		r.MaxHistoryPerContainer = 5
-	}
-	if r.HistoryTTL <= 0 {
-		r.HistoryTTL = 7 * 24 * time.Hour // default 7 days
-	}
-
-	// Register TTL Cleaner as background runner
-	if err := mgr.Add(r); err != nil {
-		return err
-	}
-
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
 		WithEventFilter(PodRestartPredicate()).

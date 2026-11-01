@@ -15,6 +15,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	observerv1alpha1 "github.com/premisan/kube-pinger/api/v1alpha1"
+	"github.com/premisan/kube-pinger/pkg/ai"
 	"github.com/premisan/kube-pinger/pkg/analyzer"
 	"github.com/premisan/kube-pinger/pkg/controller"
 )
@@ -35,8 +36,16 @@ func main() {
 	var enableLeaderElection bool
 	var maxHistoryPerContainer int
 	var historyTTL time.Duration
-
 	var leaderElectionNamespace string
+
+	// AI and localization flags
+	var enableAI bool
+	var aiProvider string
+	var aiEndpoint string
+	var aiModel string
+	var aiAPIKey string
+	var analysisLanguage string
+	var logTailLines int64
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -47,11 +56,38 @@ func main() {
 	flag.IntVar(&maxHistoryPerContainer, "max-history-per-container", 5, "Maximum number of PodRestartHistory records to retain per container.")
 	flag.DurationVar(&historyTTL, "history-ttl", 7*24*time.Hour, "Time-to-live duration for PodRestartHistory records before garbage collection (e.g. 168h for 7 days).")
 
+	flag.BoolVar(&enableAI, "enable-ai", true, "Enable local AI semantic reasoning and failure cascade synthesis.")
+	flag.StringVar(&aiProvider, "ai-provider", "embedded", "AI provider (embedded, ollama, http, openai).")
+	flag.StringVar(&aiEndpoint, "ai-endpoint", "http://localhost:11434/v1", "OpenAI-compatible / Ollama API endpoint.")
+	flag.StringVar(&aiModel, "ai-model", "qwen2.5-coder:0.5b", "AI model identifier for deep semantic reasoning.")
+	flag.StringVar(&aiAPIKey, "ai-api-key", "", "API key for external AI providers.")
+	flag.StringVar(&analysisLanguage, "analysis-language", "en", "Default language for diagnosis and AI insights (en, ko, ja, zh, etc.).")
+	flag.Int64Var(&logTailLines, "log-tail-lines", 500, "Number of previous container log lines to tail and analyze.")
+
 	opts := zap.Options{
 		Development: true,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	// Environment variable overrides
+	if envLang := os.Getenv("ANALYSIS_LANGUAGE"); envLang != "" {
+		analysisLanguage = envLang
+	}
+	if envAI := os.Getenv("ENABLE_AI"); envAI == "true" {
+		enableAI = true
+	} else if envAI == "false" {
+		enableAI = false
+	}
+	if envProvider := os.Getenv("AI_PROVIDER"); envProvider != "" {
+		aiProvider = envProvider
+	}
+	if envEndpoint := os.Getenv("AI_ENDPOINT"); envEndpoint != "" {
+		aiEndpoint = envEndpoint
+	}
+	if envModel := os.Getenv("AI_MODEL"); envModel != "" {
+		aiModel = envModel
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -84,11 +120,34 @@ func main() {
 
 	diagnosticEngine := analyzer.NewDiagnosticEngine()
 
+	aiCfg := ai.Config{
+		Enabled:         enableAI,
+		Provider:        aiProvider,
+		Endpoint:        aiEndpoint,
+		Model:           aiModel,
+		APIKey:          aiAPIKey,
+		DefaultLanguage: analysisLanguage,
+		TimeoutSeconds:  12,
+	}
+	aiEngine := ai.NewEngine(aiCfg)
+
+	setupLog.Info("Configured Kube-Pinger controller",
+		"enableAI", enableAI,
+		"aiProvider", aiProvider,
+		"analysisLanguage", analysisLanguage,
+		"logTailLines", logTailLines,
+		"maxHistory", maxHistoryPerContainer,
+		"historyTTL", historyTTL.String(),
+	)
+
 	podReconciler := &controller.PodReconciler{
 		Client:                 mgr.GetClient(),
 		KubeClient:             kubeClient,
 		Scheme:                 mgr.GetScheme(),
 		Engine:                 diagnosticEngine,
+		AIEngine:               aiEngine,
+		DefaultLanguage:        analysisLanguage,
+		LogTailLines:           logTailLines,
 		MaxHistoryPerContainer: maxHistoryPerContainer,
 		HistoryTTL:             historyTTL,
 	}

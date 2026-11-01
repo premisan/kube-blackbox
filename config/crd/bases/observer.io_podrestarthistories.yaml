@@ -99,6 +99,19 @@ spec:
                       type: string
                     errorLocation:
                       type: string
+                    culpritCode:
+                      type: object
+                      properties:
+                        language:
+                          type: string
+                        framework:
+                          type: string
+                        file:
+                          type: string
+                        line:
+                          type: integer
+                        function:
+                          type: string
                     matchedEvents:
                       type: array
                       items:
@@ -107,3 +120,27 @@ spec:
                       type: string
                     lastLogSnippet:
                       type: string
+                aiInsight:
+                  type: object
+                  properties:
+                    model:
+                      type: string
+                    analyzed:
+                      type: boolean
+                    language:
+                      type: string
+                    confidence:
+                      type: string
+                    inferredContext:
+                      type: string
+                    suggestedFix:
+                      type: string
+                    rootCauseChain:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          step:
+                            type: integer
+                          description:
+                            type: string

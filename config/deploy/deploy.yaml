@@ -85,11 +85,17 @@ spec:
             - --metrics-bind-address=:8080
             - --max-history-per-container=5
             - --history-ttl=168h
+            - --enable-ai=true
+            - --ai-provider=embedded
+            - --analysis-language=en # Set to "ko" for Korean, "ja" for Japanese, etc.
+            - --log-tail-lines=500
           env:
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: ANALYSIS_LANGUAGE
+              value: "en"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

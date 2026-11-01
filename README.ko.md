@@ -62,13 +62,20 @@ kube-pinger/
 │   └── rbac/
 │       └── rbac.yaml                           # RBAC 매니페스트
 ├── pkg/
+│   ├── ai/                                     # AI 시맨틱 추론 및 다국어 합성 엔진
+│   │   ├── embedded.go
+│   │   ├── engine.go
+│   │   ├── http.go
+│   │   └── types.go
 │   ├── analyzer/                               # 규칙 기반 진단 엔진
 │   │   ├── analyzer.go
 │   │   ├── analyzer_test.go
 │   │   ├── events.go                           # 이벤트 교차 검증
-│   │   └── log_patterns.go                     # 이전 로그 정규식 패턴
+│   │   ├── i18n.go                             # 다국어 번역 사전
+│   │   ├── log_patterns.go                     # 로그 패턴 및 범인 코드(CulpritCode) 추출
+│   │   └── log_preprocess.go                   # 구조화 JSON 로그 언패커
 │   └── controller/
-│       ├── pod_controller.go                   # Pod Watcher & Reconciler
+│       ├── pod_controller.go                   # Pod Watcher & 비동기 AI Reconciler
 │       └── pod_controller_test.go
 ├── samples/                                    # 테스트용 재시작 샘플 파드 5종
 │   ├── 01-oomkilled.yaml                       # OOMKilled 유발
@@ -122,10 +129,14 @@ kube-pinger-controller-manager-5f7bbd747d-xyz34   1/1     Running   0          2
 kubectl logs -f deployment/kube-pinger-controller-manager -n kube-pinger-system
 ```
 
-### 컨트롤러 고가용성(HA) 및 보관 주기 플래그
+### 컨트롤러 설정 플래그 (AI 및 다국어 지원, HA, 보존 정책)
 
-Kube-Pinger는 클러스터 etcd 자원을 보호하고 무중단 운영을 위한 안전장치를 내장하고 있습니다:
+Kube-Pinger는 다국어 AI 진단, 고가용성(HA) 및 etcd 부하를 방지하기 위한 안전장치를 기본 탑재하고 있습니다:
 - `--leader-elect` (기본값: `true`): `coordination.k8s.io/leases` 분산 락을 이용한 Active-Standby 리더 선출을 활성화합니다.
+- `--analysis-language` (기본값: `en`): 진단서 및 AI 인사이트의 기본 출력 언어 설정 (`en`, `ko`, `ja` 등 지원). 환경변수 `ANALYSIS_LANGUAGE` 또는 개별 파드의 `observer.io/language` 어노테이션으로 오버라이드 가능.
+- `--enable-ai` (기본값: `true`): 비동기 AI 시맨틱 추론 엔진을 활성화하여 근본 원인 연쇄 사슬(`rootCauseChain`) 및 코드 수정 가이드(`suggestedFix`)를 자동 생성.
+- `--ai-provider` (기본값: `embedded`): AI 백엔드 제공자 (`embedded`: 외부 서버/GPU 불필요, 오프라인 폐쇄망 지원, 지연시간 0초, `ollama`, `http`, `openai`).
+- `--log-tail-lines` (기본값: `500`): 분석용으로 수집할 직전 컨테이너 로그의 최대 라인 수.
 - `--max-history-per-container` (기본값: `5`): 컨테이너당 최신 5개의 재시작 기록만 유지합니다. 파드가 `CrashLoopBackOff`로 수십 번 재시작되어도 오래된 기록은 자동으로 실시간 삭제되어 etcd 도배를 방지합니다.
 - `--history-ttl` (기본값: `168h` / 7일): 생성된 지 7일이 지난 오래된 기록을 백그라운드 워커가 주기적으로 자동 청소합니다. 스팟 인스턴스 반환이나 롤링 배포로 파드가 이미 삭제되었더라도 7일 동안 원인 기록이 안전하게 보존됩니다.
 
