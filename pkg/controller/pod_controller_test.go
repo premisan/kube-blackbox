@@ -16,8 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
-	"github.com/premisan/kube-blackbox/pkg/ai"
 	"github.com/premisan/kube-blackbox/pkg/analyzer"
+	"github.com/premisan/kube-blackbox/pkg/synthesizer"
 )
 
 func TestGenerateCRName(t *testing.T) {
@@ -424,13 +424,13 @@ func TestPodReconciler_MultilingualAndAI(t *testing.T) {
 
 	fakeKube := fake.NewSimpleClientset()
 
-	aiEng := ai.NewEmbeddedEngine("test-ai-model")
+	synth := synthesizer.NewSynthesizer()
 	reconciler := &PodReconciler{
 		Client:          fakeClient,
 		KubeClient:      fakeKube,
 		Scheme:          scheme,
 		Engine:          analyzer.NewDiagnosticEngine(),
-		AIEngine:        aiEng,
+		Synthesizer:     synth,
 		DefaultLanguage: "en", // Pod annotation "ko" should override this
 	}
 
@@ -454,20 +454,23 @@ func TestPodReconciler_MultilingualAndAI(t *testing.T) {
 		t.Fatalf("expected Korean summary in CR, got: %s", cr.Status.Diagnosis.Summary)
 	}
 
-	// Give async AI analysis goroutine a moment to update CR status
+	// Give async synthesis goroutine a moment to update CR status
 	time.Sleep(100 * time.Millisecond)
 
 	if err := fakeClient.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: crName}, &cr); err != nil {
 		t.Fatalf("failed to re-fetch created CR: %v", err)
 	}
-	if cr.Status.AIInsight == nil {
-		t.Fatalf("expected AIInsight to be populated by async worker")
+	if cr.Status.Insight == nil {
+		t.Fatalf("expected Insight to be populated by async worker")
 	}
-	if cr.Status.AIInsight.Language != "ko" {
-		t.Fatalf("expected AIInsight language ko, got: %s", cr.Status.AIInsight.Language)
+	if cr.Status.Insight.Engine != synthesizer.EngineIdentifier {
+		t.Fatalf("expected Engine=%s, got %s", synthesizer.EngineIdentifier, cr.Status.Insight.Engine)
 	}
-	if len(cr.Status.AIInsight.RootCauseChain) == 0 {
-		t.Fatalf("expected RootCauseChain in AIInsight")
+	if cr.Status.Insight.Language != "ko" {
+		t.Fatalf("expected Insight language ko, got: %s", cr.Status.Insight.Language)
+	}
+	if len(cr.Status.Insight.RootCauseChain) == 0 {
+		t.Fatalf("expected RootCauseChain in Insight")
 	}
 }
 

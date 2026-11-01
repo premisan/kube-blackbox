@@ -6,7 +6,7 @@
 
 > [English Version](README.md)
 
-쿠버네티스 파드의 재시작(`restartCount` 증가)을 실시간으로 감지하고 종료 상태(`LastTerminationState`), 쿠버네티스 이벤트(`Events`), 직전 컨테이너 로그(`Previous Logs`)를 로컬 AI 및 규칙 기반 엔진으로 교차 분석하여 근본 원인과 인과관계 사슬을 `PodRestartHistory` CRD로 자동 기록하는 쿠버네티스 지능형 관측 컨트롤러입니다.
+쿠버네티스 파드의 재시작(`restartCount` 증가)을 실시간으로 감지하고 종료 상태(`LastTerminationState`), 쿠버네티스 이벤트(`Events`), 직전 컨테이너 로그(`Previous Logs`)를 규칙 및 사실 기반 엔진으로 정밀 교차 분석하여 근본 원인과 인과관계 사슬을 `PodRestartHistory` CRD로 자동 기록하는 쿠버네티스 지능형 관측 컨트롤러입니다.
 
 파드가 재시작되었을 때 여러 `kubectl` 명령어와 과거 로그를 일일이 뒤질 필요 없이, `kubectl get prh` 명령어로 재시작 원인을 한 번에 파악할 수 있습니다.
 
@@ -37,8 +37,8 @@
    └── Unhandled Exception (Python, Node) ──► [AppUnhandledException]
        │
        ▼
-4. Local AI 시맨틱 추론 (비동기 워커)
-   └── 지정 언어로 원인 연쇄 사슬(RootCauseChain), 범인 코드(CulpritCode) 및 코드 수정 가이드 자동 생성
+4. 내장 시맨틱 합성기 (Embedded Synthesizer, 비동기 워커)
+   └── 수집된 사실(Fact) 기반으로 원인 연쇄 사슬(RootCauseChain) 및 조치 가이드 생성 (ko/en)
        │
        ▼
 [PodRestartHistory CRD 생성 및 상태 기록]
@@ -63,11 +63,6 @@ kube-blackbox/
 │   └── rbac/
 │       └── rbac.yaml                           # RBAC 매니페스트
 ├── pkg/
-│   ├── ai/                                     # AI 시맨틱 추론 및 다국어 합성 엔진
-│   │   ├── embedded.go
-│   │   ├── engine.go
-│   │   ├── http.go
-│   │   └── types.go
 │   ├── analyzer/                               # 규칙 기반 진단 엔진
 │   │   ├── analyzer.go
 │   │   ├── analyzer_test.go
@@ -76,9 +71,13 @@ kube-blackbox/
 │   │   ├── log_patterns.go                     # 로그 패턴 및 범인 코드(CulpritCode) 추출
 │   │   ├── log_preprocess.go                   # 구조화 JSON 로그 언패커
 │   │   └── log_preprocess_test.go
-│   └── controller/
-│       ├── pod_controller.go                   # Pod Watcher & 비동기 AI Reconciler
-│       └── pod_controller_test.go
+│   ├── controller/
+│   │   ├── pod_controller.go                   # Pod Watcher & 비동기 합성 Reconciler
+│   │   └── pod_controller_test.go
+│   └── synthesizer/                            # 결정론적 인과관계 사슬 합성 엔진
+│       ├── synthesizer.go
+│       ├── synthesizer_test.go
+│       └── types.go
 ├── samples/                                    # 테스트용 재시작 샘플 파드 5종
 │   ├── 01-oomkilled.yaml                       # OOMKilled 유발
 │   ├── 02-liveness-probe-failure.yaml          # Liveness Probe 실패 유발
@@ -131,13 +130,11 @@ kube-blackbox-5f7bbd747d-xyz34   1/1     Running   0          25s
 kubectl logs -f deployment/kube-blackbox -n kube-blackbox
 ```
 
-### 컨트롤러 설정 플래그 (AI 및 다국어 지원, HA, 보존 정책)
+### 컨트롤러 설정 플래그 (다국어 지원, HA, 보존 정책)
 
-Kube-Blackbox는 다국어 AI 진단, 고가용성(HA) 및 etcd 부하를 방지하기 위한 안전장치를 기본 탑재하고 있습니다:
+Kube-Blackbox는 다국어 인과관계 합성, 고가용성(HA) 및 etcd 부하를 방지하기 위한 안전장치를 기본 탑재하고 있습니다:
 - `--leader-elect` (기본값: `true`): `coordination.k8s.io/leases` 분산 락을 이용한 Active-Standby 리더 선출을 활성화합니다.
-- `--analysis-language` (기본값: `en`): 진단서 및 AI 인사이트의 기본 출력 언어 설정 (`en`, `ko`, `ja` 등 지원). 환경변수 `ANALYSIS_LANGUAGE` 또는 개별 파드의 `observer.io/language` 어노테이션으로 오버라이드 가능.
-- `--enable-ai` (기본값: `true`): 비동기 AI 시맨틱 추론 엔진을 활성화하여 근본 원인 연쇄 사슬(`rootCauseChain`) 및 코드 수정 가이드(`suggestedFix`)를 자동 생성.
-- `--ai-provider` (기본값: `embedded`): AI 백엔드 제공자 (`embedded`: 외부 서버/GPU 불필요, 오프라인 폐쇄망 지원, 지연시간 0초, `ollama`, `http`, `openai`).
+- `--analysis-language` (기본값: `ko`): 진단서 및 인사이트의 기본 출력 언어 설정 (공식 지원: `ko` 한국어, `en` 영어). 미지원 언어 입력 시 투명하게 `ko`로 폴백 표기. 환경변수 `ANALYSIS_LANGUAGE` 또는 개별 파드의 `observer.io/language` 어노테이션으로 오버라이드 가능.
 - `--log-tail-lines` (기본값: `500`): 분석용으로 수집할 직전 컨테이너 로그의 최대 라인 수.
 - `--max-history-per-container` (기본값: `5`): 컨테이너당 최신 5개의 재시작 기록만 유지합니다. 파드가 `CrashLoopBackOff`로 수십 번 재시작되어도 오래된 기록은 자동으로 실시간 삭제되어 etcd 도배를 방지합니다.
 - `--history-ttl` (기본값: `168h` / 7일): 생성된 지 7일이 지난 오래된 기록을 백그라운드 워커가 주기적으로 자동 청소합니다. 스팟 인스턴스 반환이나 롤링 배포로 파드가 이미 삭제되었더라도 7일 동안 원인 기록이 안전하게 보존됩니다.
@@ -223,6 +220,20 @@ Status:
     Last Log Snippet:    [INFO] Rapid heap allocation loop beginning...
                          Exception in thread "main" java.lang.OutOfMemoryError: Java heap space
                          at MemoryHog.main(MemoryHog.java:13)
+  Insight:
+    Analyzed:            true
+    Confidence:          High
+    Engine:              rule-synthesizer
+    Inferred Context:    Java 힙 메모리가 소진되었습니다. 배치 작업 또는 캐시 데이터 누적으로 인해 가비지 컬렉터가 메모리를 회수하지 못했습니다.
+    Language:            ko
+    Suggested Fix:       JVM -Xmx 힙 설정을 확장하거나 메모리 누수를 프로파일링하십시오.
+    Root Cause Chain:
+      - Step: 1
+        Cause: Process exited with non-zero status
+        Description: Container terminated with exit code 1
+      - Step: 2
+        Cause: Log signature matched OutOfMemoryError
+        Description: Last logs contain JVM heap exhaustion pattern
 ```
 
 ---

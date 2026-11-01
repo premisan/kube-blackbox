@@ -23,8 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
-	"github.com/premisan/kube-blackbox/pkg/ai"
 	"github.com/premisan/kube-blackbox/pkg/analyzer"
+	"github.com/premisan/kube-blackbox/pkg/synthesizer"
 )
 
 // PodReconciler reconciles Pod restarts, creates diagnoses, and manages retention & TTL.
@@ -33,7 +33,7 @@ type PodReconciler struct {
 	KubeClient             kubernetes.Interface
 	Scheme                 *runtime.Scheme
 	Engine                 *analyzer.DiagnosticEngine
-	AIEngine               ai.AIEngine
+	Synthesizer            *synthesizer.Synthesizer
 	DefaultLanguage        string
 	LogTailLines           int64
 	MaxHistoryPerContainer int
@@ -84,13 +84,13 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		prevLogs := r.fetchPreviousLogs(ctx, pod.Namespace, pod.Name, cs.Name)
 		events := r.fetchPodEvents(ctx, pod.Namespace, pod.Name)
 
-		// Determine target language (pod annotation > controller default > en)
+		// Determine target language (pod annotation > controller default > ko)
 		targetLang := r.DefaultLanguage
 		if langAnno, ok := pod.Annotations["observer.io/language"]; ok && langAnno != "" {
 			targetLang = langAnno
 		}
 		if targetLang == "" {
-			targetLang = "en"
+			targetLang = "ko"
 		}
 
 		diagInput := analyzer.DiagnosticInput{
@@ -164,9 +164,9 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			"language", targetLang,
 		)
 
-		// Trigger asynchronous AI deep semantic analysis if enabled
-		if r.AIEngine != nil {
-			go r.triggerAIAnalysis(context.Background(), newCR.Namespace, newCR.Name, pod, cs, diagnosis, evidence, prevLogs, events, targetLang)
+		// Trigger asynchronous deep causal synthesis (built-in core feature)
+		if r.Synthesizer != nil {
+			go r.triggerSynthesis(context.Background(), newCR.Namespace, newCR.Name, pod, cs, diagnosis, evidence, prevLogs, events, targetLang)
 		}
 
 		// Prune older histories exceeding MaxHistoryPerContainer
@@ -176,8 +176,8 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	return ctrl.Result{}, nil
 }
 
-// triggerAIAnalysis runs in a background goroutine to perform deep AI reasoning without blocking the reconcile loop.
-func (r *PodReconciler) triggerAIAnalysis(
+// triggerSynthesis runs asynchronously in background to build root cause chains without blocking reconcile.
+func (r *PodReconciler) triggerSynthesis(
 	ctx context.Context,
 	namespace, crName string,
 	pod corev1.Pod,
@@ -195,7 +195,7 @@ func (r *PodReconciler) triggerAIAnalysis(
 		matchedEvStrings = append(matchedEvStrings, ev.Message)
 	}
 
-	inc := ai.IncidentContext{
+	inc := synthesizer.IncidentContext{
 		Namespace:         namespace,
 		PodName:           pod.Name,
 		ContainerName:     cs.Name,
@@ -210,32 +210,32 @@ func (r *PodReconciler) triggerAIAnalysis(
 		CulpritCode:       evidence.CulpritCode,
 	}
 
-	insight, err := r.AIEngine.Analyze(ctx, inc)
-	if err != nil || insight == nil {
-		logger.Error(err, "Failed to run AI analysis")
+	res, err := r.Synthesizer.Synthesize(ctx, inc)
+	if err != nil || res == nil {
+		logger.Error(err, "Failed to synthesize root cause chain")
 		return
 	}
 
 	var targetCR observerv1alpha1.PodRestartHistory
 	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: crName}, &targetCR); err != nil {
-		logger.Error(err, "Failed to fetch CR for updating AI insight")
+		logger.Error(err, "Failed to fetch CR for updating Insight")
 		return
 	}
 
-	targetCR.Status.AIInsight = &observerv1alpha1.AIInsight{
-		Model:           insight.Model,
-		Analyzed:        insight.Analyzed,
-		Language:        insight.Language,
-		Confidence:      insight.Confidence,
-		InferredContext: insight.InferredContext,
-		SuggestedFix:    insight.SuggestedFix,
-		RootCauseChain:  insight.RootCauseChain,
+	targetCR.Status.Insight = &observerv1alpha1.Insight{
+		Engine:          res.Engine,
+		Analyzed:        res.Analyzed,
+		Language:        res.Language,
+		Confidence:      res.Confidence,
+		InferredContext: res.InferredContext,
+		SuggestedFix:    res.SuggestedFix,
+		RootCauseChain:  res.RootCauseChain,
 	}
 
 	if err := r.Status().Update(ctx, &targetCR); err != nil {
 		_ = r.Update(ctx, &targetCR)
 	}
-	logger.Info("Successfully updated AI Insight for PodRestartHistory", "crName", crName, "model", insight.Model)
+	logger.Info("Successfully updated Insight for PodRestartHistory", "crName", crName, "engine", res.Engine)
 }
 
 // pruneExcessHistories deletes older PodRestartHistory records exceeding MaxHistoryPerContainer
@@ -389,8 +389,6 @@ func (r *PodReconciler) fetchPodEvents(ctx context.Context, namespace, podName s
 }
 
 // GenerateCRName produces a deterministic, DNS-1123 compliant resource name.
-// When podUID is provided, a 5-character short UID is embedded to distinguish
-// restarted pods that share identical names (e.g. StatefulSet pods across recreation).
 func GenerateCRName(podName, podUID, containerName string, restartCount int32) string {
 	shortUID := ""
 	if podUID != "" {

@@ -24,10 +24,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get", "list"]
-  # Events permissions
-  - apiGroups: [""]
+  # Events permissions (Read for diagnostics, Create/Patch for Leader Election)
+  - apiGroups: ["", "events.k8s.io"]
     resources: ["events"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
   # PodRestartHistory CRD permissions
   - apiGroups: ["observer.io"]
     resources: ["podrestarthistories"]
@@ -86,9 +86,7 @@ spec:
             - --metrics-bind-address=:8080
             - --max-history-per-container=5
             - --history-ttl=168h
-            - --enable-ai=true
-            - --ai-provider=embedded
-            - --analysis-language=en # Set to "ko" for Korean, "ja" for Japanese, etc.
+            - --analysis-language=ko # Supported: ko, en
             - --log-tail-lines=500
           env:
             - name: POD_NAMESPACE
@@ -96,7 +94,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: ANALYSIS_LANGUAGE
-              value: "en"
+              value: "ko"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

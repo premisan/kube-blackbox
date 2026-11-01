@@ -120,10 +120,10 @@ spec:
                       type: string
                     lastLogSnippet:
                       type: string
-                aiInsight:
+                insight:
                   type: object
                   properties:
-                    model:
+                    engine:
                       type: string
                     analyzed:
                       type: boolean

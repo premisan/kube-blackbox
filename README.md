@@ -6,7 +6,7 @@
 
 > [한국어 (Korean Version)](README.ko.md)
 
-**Kube-Blackbox** is an intelligent Kubernetes controller that monitors pod restarts in real time, automatically deduces root causes via rule-based heuristics and local AI semantic reasoning across **LastTerminationState**, **Kubelet Events**, and **Previous Container Logs**, and records the diagnosis directly into a custom resource (`PodRestartHistory`).
+**Kube-Blackbox** is a Kubernetes flight recorder and controller that monitors pod restarts in real time, automatically deduces root causes via rule-based heuristics and causal synthesis across **LastTerminationState**, **Kubelet Events**, and **Previous Container Logs**, and records the diagnosis directly into a custom resource (`PodRestartHistory`).
 
 Stop digging through past logs and multiple `kubectl` commands. Simply run `kubectl get prh` to see why your pods restarted.
 
@@ -37,8 +37,8 @@ Stop digging through past logs and multiple `kubectl` commands. Simply run `kube
    └── Unhandled Exception (Python, Node) ──► [AppUnhandledException]
        │
        ▼
-4. Local AI Semantic Reasoning (Async Worker)
-   └── Generates RootCauseChain, CulpritCode, and Actionable Fix in Target Language
+4. Embedded Semantic Synthesizer (Async Worker)
+   └── Generates RootCauseChain, CulpritCode, and Actionable Fix in Target Language (ko/en)
        │
        ▼
 [Create / Update PodRestartHistory CRD]
@@ -63,11 +63,6 @@ kube-blackbox/
 │   └── rbac/
 │       └── rbac.yaml                           # RBAC manifests
 ├── pkg/
-│   ├── ai/                                     # Semantic reasoning & multi-language engine
-│   │   ├── embedded.go
-│   │   ├── engine.go
-│   │   ├── http.go
-│   │   └── types.go
 │   ├── analyzer/                               # Rule-based diagnostic engine
 │   │   ├── analyzer.go
 │   │   ├── analyzer_test.go
@@ -76,9 +71,13 @@ kube-blackbox/
 │   │   ├── log_patterns.go                     # Deep log signatures & culprit code extraction
 │   │   ├── log_preprocess.go                   # JSON structured log unpacker
 │   │   └── log_preprocess_test.go
-│   └── controller/
-│       ├── pod_controller.go                   # Pod Watcher & Async AI Reconciler
-│       └── pod_controller_test.go
+│   ├── controller/
+│   │   ├── pod_controller.go                   # Pod Watcher & Async Synthesis Reconciler
+│   │   └── pod_controller_test.go
+│   └── synthesizer/                            # Deterministic causal chain synthesizer
+│       ├── synthesizer.go
+│       ├── synthesizer_test.go
+│       └── types.go
 ├── samples/                                    # Sample crash pods for testing
 │   ├── 01-oomkilled.yaml                       # Triggers cgroup OOMKilled
 │   ├── 02-liveness-probe-failure.yaml          # Triggers Liveness Probe failure
@@ -131,13 +130,11 @@ Check real-time controller logs (Active Leader will show `Successfully acquired 
 kubectl logs -f deployment/kube-blackbox -n kube-blackbox
 ```
 
-### Controller Retention, HA & AI Configuration Flags
+### Controller Retention, HA & Configuration Flags
 
-Kube-Blackbox includes built-in HA, AI semantic reasoning, and safeguards to protect etcd from flooding:
+Kube-Blackbox includes built-in HA, deterministic causal synthesis, and safeguards to protect etcd from flooding:
 - **`--leader-elect`** (Default: `true`): Enables Active-Standby leader election via Kubernetes Leases for safe multi-replica deployments.
-- **`--analysis-language`** (Default: `en`): Primary reporting language for diagnoses and AI insights (`en`, `ko`, `ja`, etc.). Can be overridden globally via `ANALYSIS_LANGUAGE` env var or per-pod via `observer.io/language` annotation.
-- **`--enable-ai`** (Default: `true`): Enables asynchronous semantic reasoning to produce detailed failure cascades (`rootCauseChain`) and actionable code fixes (`suggestedFix`).
-- **`--ai-provider`** (Default: `embedded`): Supported options: `embedded` (offline, zero-latency, no external server or GPU required), `ollama`, `http`, `openai`.
+- **`--analysis-language`** (Default: `ko`): Primary reporting language for diagnoses and insights. Supported languages: `ko` (Korean), `en` (English). Unsupported languages automatically fall back to `ko` with transparent fallback notation. Can be overridden globally via `ANALYSIS_LANGUAGE` env var or per-pod via `observer.io/language` annotation.
 - **`--log-tail-lines`** (Default: `500`): Maximum lines of previous container logs collected for analysis.
 - **`--max-history-per-container`** (Default: `5`): Keeps only the latest 5 restart records per container. When a container enters `CrashLoopBackOff`, older records are automatically pruned.
 - **`--history-ttl`** (Default: `168h` / 7 days): Background GC worker periodically cleans up records older than 7 days. Pod restart records remain accessible even if the pod or spot node is deleted during cluster scaling or maintenance.
@@ -223,6 +220,20 @@ Status:
     Last Log Snippet:    [INFO] Rapid heap allocation loop beginning...
                          Exception in thread "main" java.lang.OutOfMemoryError: Java heap space
                          at MemoryHog.main(MemoryHog.java:13)
+  Insight:
+    Analyzed:            true
+    Confidence:          High
+    Engine:              rule-synthesizer
+    Inferred Context:    Java 힙 메모리가 소진되었습니다. 배치 작업 또는 캐시 데이터 누적으로 인해 가비지 컬렉터가 메모리를 회수하지 못했습니다.
+    Language:            ko
+    Suggested Fix:       JVM -Xmx 힙 설정을 확장하거나 메모리 누수를 프로파일링하십시오.
+    Root Cause Chain:
+      - Step: 1
+        Cause: Process exited with non-zero status
+        Description: Container terminated with exit code 1
+      - Step: 2
+        Cause: Log signature matched OutOfMemoryError
+        Description: Last logs contain JVM heap exhaustion pattern
 ```
 
 ---
