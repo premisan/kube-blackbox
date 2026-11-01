@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-gemini-quota
+  labels:
+    app: sample-gemini-quota
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: ai-worker
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Initializing Gemini 1.5 Pro client..."
+          echo "[INFO] Sending multi-turn chat request..."
+          echo "google.genai.errors.APIError: 429 RESOURCE_EXHAUSTED. Quota exceeded for quota metric 'Generate Content API requests' and limit 'Generate Content API requests per minute' of service 'generativelanguage.googleapis.com'" >&2
+          echo "[FATAL] Unhandled APIError: Rate limit reached. Process aborting." >&2
+          exit 1

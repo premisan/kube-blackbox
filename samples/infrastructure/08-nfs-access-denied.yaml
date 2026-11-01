@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-nfs-access-denied
+  labels:
+    app: sample-nfs-access-denied
+    category: infrastructure
+spec:
+  restartPolicy: Always
+  containers:
+    - name: nfs-client
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Mounting remote storage volume from 192.168.1.50:/exports/data..."
+          echo "mount.nfs: access denied by server while mounting 192.168.1.50:/exports/data" >&2
+          echo "[FATAL] Failed to mount storage. Container cannot proceed." >&2
+          exit 1

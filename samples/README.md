@@ -1,6 +1,6 @@
 # Kube-Blackbox Failure Simulation Samples
 
-이 디렉토리는 `kube-blackbox`의 다차원 진단 엔진과 원인 사슬(Root Cause Chain) 합성을 검증하기 위한 **29종의 카테고리별 실전 재시작 샘플 파드**를 제공합니다.
+이 디렉토리는 `kube-blackbox`의 다차원 진단 엔진과 원인 사슬(Root Cause Chain) 합성을 검증하기 위한 **34종의 카테고리별 실전 재시작 샘플 파드**를 제공합니다.
 
 모든 샘플 파드는 쿠버네티스 표준 공식 경량 이미지(`busybox`, `alpine`, `python:3.11-alpine`, `node:18-alpine`, `amazoncorretto:17-alpine`)를 사용하며, 실제 운영 환경에서 발생하는 장애 시나리오를 재현합니다.
 
@@ -8,8 +8,8 @@
 
 ## 디렉토리 구조 및 카테고리별 샘플 목록
 
-### 1. `samples/infrastructure/` (인프라, DNS 및 K8s 라이프사이클)
-쿠버네티스 제어 평면, cgroup, CoreDNS, Kubelet 프로브 및 노드 레벨 장애를 다룹니다.
+### 1. `samples/infrastructure/` (인프라, 스토리지, DNS 및 K8s 라이프사이클)
+쿠버네티스 제어 평면, cgroup, CoreDNS, NFS 드라이버, Kubelet 프로브 및 노드 레벨 장애를 다룹니다.
 
 | 파일명 | 파드명 | 진단 원인 (Root Cause) | 주요 시나리오 |
 | :--- | :--- | :--- | :--- |
@@ -20,6 +20,7 @@
 | `05-startup-probe-timeout.yaml` | `sample-startup-probe-timeout` | `StartupProbeFailure` | 콜드 스타트 초기화 지연으로 Startup Probe 임계 시간 초과 종료 |
 | `06-grace-period-timeout.yaml` | `sample-grace-period-timeout` | `GracePeriodExceeded` | SIGTERM 핸들러 블로킹으로 10초 grace period 초과 후 SIGKILL(137) 강제 종료 |
 | `07-coredns-loop.yaml` | `sample-coredns-loop` | `CoreDNSLoopDetected` | 노드 resolv.conf 127.0.0.1 루프백 포워딩 무한 루프 감지 후 CoreDNS 긴급 정지 |
+| `08-nfs-access-denied.yaml` | `sample-nfs-access-denied` | `NFSMountAccessDenied` | NFS 서버 익스포트 디렉토리 마운트 권한 거부(`mount.nfs: access denied`) |
 
 ### 2. `samples/application/` (애플리케이션 및 런타임 크래시)
 다양한 언어 런타임(Go, Python, Java, Node.js, Rust, C/C++)의 메모리/예외/패닉 오류를 다룹니다.
@@ -33,8 +34,8 @@
 | `05-rust-panic-unwrap.yaml` | `sample-rust-panic` | `RustUnwrapNone` | Rust `Option::unwrap()` on `None` 패닉 및 파일/라인 추적 |
 | `06-c-segfault.yaml` | `sample-c-segfault` | `SegmentationFault` | C/C++ 네이티브 메모리 침범으로 인한 세그멘테이션 오류 (SIGSEGV, Exit 139) |
 
-### 3. `samples/configuration/` (설정, 웹서버 문법 및 보안 컨텍스트 오류)
-컨테이너 이미지 아키텍처, 엔트리포인트, 파일 권한, Nginx 문법 오류, SecurityContext 제약 조건을 다룹니다.
+### 3. `samples/configuration/` (설정, 웹서버 문법, 정책 및 보안 컨텍스트 오류)
+컨테이너 이미지 아키텍처, 엔트리포인트, 파일 권한, Nginx 문법 오류, Kyverno 정책 차단, SecurityContext 제약 조건을 다룹니다.
 
 | 파일명 | 파드명 | 진단 원인 (Root Cause) | 주요 시나리오 |
 | :--- | :--- | :--- | :--- |
@@ -44,9 +45,10 @@
 | `04-readonly-root-filesystem.yaml` | `sample-readonly-rootfs` | `ReadOnlyRootFilesystem` | `readOnlyRootFilesystem: true` 제약 환경에서 루트 쓰기 시도 실패 |
 | `05-run-as-non-root-violation.yaml` | `sample-nonroot-violation` | `PermissionDenied` | `runAsNonRoot: true` 비루트 환경에서 보호된 루트 파일 접근 차단 |
 | `06-nginx-ingress-syntax-error.yaml` | `sample-nginx-syntax-error` | `NginxConfigSyntaxError` | Ingress-Nginx 설정 문법 오류(`nginx: [emerg]`)로 인한 기동 실패 |
+| `07-kyverno-policy-violation.yaml` | `sample-kyverno-violation` | `KyvernoAdmissionPolicyViolation` | Kyverno ClusterPolicy 검증 규칙 위반으로 인한 어드미션 웹훅 생성 거절 |
 
-### 4. `samples/dependency/` (외부 의존성, 서비스 메시 및 엔터프라이즈 OSS 연쇄 장애)
-데이터베이스, 메시지 브로커, Istio 서비스 메시, Envoy 프록시 서킷 브레이커, Vault 봉인 장애를 다룹니다.
+### 4. `samples/dependency/` (외부 의존성, 클라우드 SDK, 서비스 메시, LLM 및 빅데이터 연쇄 장애)
+데이터베이스, 메시지 브로커, Istio 메시, Envoy 프록시 서킷 브레이커, Vault 봉인, Gemini API 할당량, ClickHouse 파트 초과, LiteLLM 속도 제한 장애를 다룹니다.
 
 | 파일명 | 파드명 | 진단 원인 (Root Cause) | 주요 시나리오 |
 | :--- | :--- | :--- | :--- |
@@ -59,6 +61,9 @@
 | `07-istio-race-condition.yaml` | `sample-istio-startup-race` | `IstioStartupRaceCondition` | `istio-proxy` 준비 전 메인 컨테이너 조기 기동 및 외부 연결 거부 크래시 |
 | `08-envoy-circuit-breaker.yaml` | `sample-envoy-circuit-breaker` | `EnvoyCircuitBreakerOverflow` | Envoy Access Log `503 UO` 플래그 서킷 브레이커 오버플로우 감지 |
 | `09-vault-agent-sealed.yaml` | `sample-vault-agent-sealed` | `VaultSealedFailure` | HashiCorp Vault 봉인(Sealed, HTTP 503)으로 인한 Vault Agent 시크릿 주입 실패 |
+| `10-gcp-gemini-quota.yaml` | `sample-gemini-quota` | `GCPGeminiQuotaExceeded` | Google Gemini API 429 ResourceExhausted (분당 요청/토큰 쿼터 초과) |
+| `11-clickhouse-too-many-parts.yaml` | `sample-clickhouse-parts` | `ClickHouseTooManyParts` | ClickHouse 고빈도 소형 INSERT로 인한 300+ 파트 머지 백프레셔 쓰기 차단 |
+| `12-litellm-rate-limit.yaml` | `sample-litellm-ratelimit` | `LiteLLMRateLimitExceeded` | LiteLLM 프록시 연결 업스트림 LLM 프로바이더 429 속도 제한(TPM/RPM) 초과 |
 
 ---
 

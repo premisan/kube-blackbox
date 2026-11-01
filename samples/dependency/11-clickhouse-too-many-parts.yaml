@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-clickhouse-parts
+  labels:
+    app: sample-clickhouse-parts
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: clickhouse
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "2026.11.02 02:00:00.123456 [ 123 ] {} <Error> default.telemetry: DB::Exception: Too many parts (324) in all data parts in table. Merges are processing significantly slower than inserts." >&2
+          echo "2026.11.02 02:00:00.123789 [ 123 ] {} <Fatal> Application: Cannot insert data due to part backpressure." >&2
+          exit 1

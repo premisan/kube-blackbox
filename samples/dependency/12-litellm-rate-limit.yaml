@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-litellm-ratelimit
+  labels:
+    app: sample-litellm-ratelimit
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: litellm-proxy
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] LiteLLM: proxying request to model 'gpt-4o'..."
+          echo "litellm.exceptions.RateLimitError: RateLimitError: LLM Provider returned rate limit error: 429 Too Many Requests (TPM/RPM limit exceeded)" >&2
+          echo "[ERROR] All fallback models exhausted. Client request dropped." >&2
+          exit 1

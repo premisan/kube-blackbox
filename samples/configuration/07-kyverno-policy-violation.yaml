@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-kyverno-violation
+  labels:
+    app: sample-kyverno-violation
+    category: configuration
+spec:
+  restartPolicy: Always
+  containers:
+    - name: deploy-job
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Deploying container workload..."
+          echo "Error from server: admission webhook \"validate.kyverno.svc\" denied the request: policy require-run-as-non-root failed on resource" >&2
+          echo "[FATAL] Admission webhook rejection. Exiting." >&2
+          exit 1
