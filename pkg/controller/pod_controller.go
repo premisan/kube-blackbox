@@ -93,6 +93,8 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			targetLang = "ko"
 		}
 
+		priors := r.fetchPriorHistories(ctx, pod.Namespace, pod.Name, cs.Name, cs.RestartCount)
+
 		diagInput := analyzer.DiagnosticInput{
 			Pod:             &pod,
 			ContainerName:   cs.Name,
@@ -100,6 +102,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			Events:          events,
 			PreviousLogs:    prevLogs,
 			Language:        targetLang,
+			PriorHistories:  priors,
 		}
 
 		diagnosis, evidence := r.Engine.Diagnose(diagInput)
@@ -209,23 +212,28 @@ func (r *PodReconciler) triggerSynthesis(
 	}
 
 	inc := synthesizer.IncidentContext{
-		Namespace:                 namespace,
-		PodName:                   pod.Name,
-		ContainerName:             cs.Name,
-		ExitCode:                  evidence.ExitCode,
-		TerminationReason:         evidence.TerminationReason,
-		Category:                  diagnosis.Category,
-		RootCause:                 diagnosis.RootCause,
-		Confidence:                diagnosis.Confidence,
-		ErrorClass:                evidence.ErrorClass,
-		MatchedEvents:             matchedEvStrings,
-		LastLogs:                  logs,
-		Language:                  lang,
-		CulpritCode:               evidence.CulpritCode,
-		UptimeSeconds:             evidence.UptimeSeconds,
-		GracePeriodExceeded:       evidence.GracePeriodExceeded,
-		ResourceConstraints:       evidence.ResourceConstraints,
-		SecurityContextViolations: evidence.SecurityContextViolations,
+		Namespace:                   namespace,
+		PodName:                     pod.Name,
+		ContainerName:               cs.Name,
+		ExitCode:                    evidence.ExitCode,
+		TerminationReason:           evidence.TerminationReason,
+		Category:                    diagnosis.Category,
+		RootCause:                   diagnosis.RootCause,
+		Confidence:                  diagnosis.Confidence,
+		ErrorClass:                  evidence.ErrorClass,
+		MatchedEvents:               matchedEvStrings,
+		LastLogs:                    logs,
+		Language:                    lang,
+		CulpritCode:                 evidence.CulpritCode,
+		UptimeSeconds:               evidence.UptimeSeconds,
+		GracePeriodExceeded:         evidence.GracePeriodExceeded,
+		ResourceConstraints:         evidence.ResourceConstraints,
+		SecurityContextViolations:   evidence.SecurityContextViolations,
+		RecurrentFailure:            evidence.RecurrentFailure,
+		ConsecutiveFailures:         evidence.ConsecutiveFailures,
+		FailureTransition:           evidence.FailureTransition,
+		PriorRootCauses:             evidence.PriorRootCauses,
+		TimeSinceLastRestartSeconds: evidence.TimeSinceLastRestartSeconds,
 	}
 
 	res, err := r.Synthesizer.Synthesize(ctx, inc)
@@ -254,6 +262,38 @@ func (r *PodReconciler) triggerSynthesis(
 		_ = r.Update(ctx, &targetCR)
 	}
 	logger.Info("Successfully updated Insight for PodRestartHistory", "crName", crName, "engine", res.Engine)
+}
+
+// fetchPriorHistories retrieves existing PodRestartHistory records for this container prior to currentRestartCount.
+func (r *PodReconciler) fetchPriorHistories(ctx context.Context, namespace, podName, containerName string, currentRestartCount int32) []observerv1alpha1.PodRestartHistory {
+	var list observerv1alpha1.PodRestartHistoryList
+	err := r.List(ctx, &list,
+		client.InNamespace(namespace),
+		client.MatchingLabels{
+			"observer.io/pod-name":       sanitizeLabelValue(podName),
+			"observer.io/container-name": sanitizeLabelValue(containerName),
+		},
+	)
+	if err != nil || len(list.Items) == 0 {
+		return nil
+	}
+
+	var priors []observerv1alpha1.PodRestartHistory
+	for _, item := range list.Items {
+		if item.Spec.RestartCount < currentRestartCount {
+			priors = append(priors, item)
+		}
+	}
+
+	// Sort newest first by Spec.RestartCount descending
+	sort.Slice(priors, func(i, j int) bool {
+		return priors[i].Spec.RestartCount > priors[j].Spec.RestartCount
+	})
+
+	if len(priors) > 5 {
+		priors = priors[:5]
+	}
+	return priors
 }
 
 // pruneExcessHistories deletes older PodRestartHistory records exceeding MaxHistoryPerContainer

@@ -47,6 +47,13 @@ type Evidence struct {
 	GracePeriodExceeded       bool         `json:"gracePeriodExceeded,omitempty"`
 	ResourceConstraints       string       `json:"resourceConstraints,omitempty"`
 	SecurityContextViolations string       `json:"securityContextViolations,omitempty"`
+
+	// Historical context correlation fields
+	RecurrentFailure            bool     `json:"recurrentFailure,omitempty"`
+	ConsecutiveFailures         int      `json:"consecutiveFailures,omitempty"`
+	FailureTransition           string   `json:"failureTransition,omitempty"`
+	PriorRootCauses             []string `json:"priorRootCauses,omitempty"`
+	TimeSinceLastRestartSeconds *int64   `json:"timeSinceLastRestartSeconds,omitempty"`
 }
 
 // ChainStep represents an event or causal step in the failure cascade
@@ -118,6 +125,16 @@ func (in *PodRestartHistory) DeepCopyInto(out *PodRestartHistory) {
 	}
 	if in.Status.Evidence.UptimeSeconds != nil {
 		in, out := &in.Status.Evidence.UptimeSeconds, &out.Status.Evidence.UptimeSeconds
+		*out = new(int64)
+		**out = **in
+	}
+	if in.Status.Evidence.PriorRootCauses != nil {
+		in, out := &in.Status.Evidence.PriorRootCauses, &out.Status.Evidence.PriorRootCauses
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.Status.Evidence.TimeSinceLastRestartSeconds != nil {
+		in, out := &in.Status.Evidence.TimeSinceLastRestartSeconds, &out.Status.Evidence.TimeSinceLastRestartSeconds
 		*out = new(int64)
 		**out = **in
 	}

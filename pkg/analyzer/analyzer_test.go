@@ -8,6 +8,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
 )
 
 func TestDiagnose_OOMKilled(t *testing.T) {
@@ -1429,5 +1431,174 @@ google.cloud.exceptions.BadRequest: 400 Cannot query over table 'corp-data.sales
 	}
 	if ev.ErrorClass != "BigQuery_PartitionFilterRequired" {
 		t.Fatalf("expected BigQuery_PartitionFilterRequired, got: %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnoseWithPriorHistories_RecurrentFailure(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(137)
+	now := time.Now()
+	twoMinutesAgo := metav1.NewTime(now.Add(-2 * time.Minute))
+	fourMinutesAgo := metav1.NewTime(now.Add(-4 * time.Minute))
+
+	priors := []observerv1alpha1.PodRestartHistory{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "test-pod-app-restart-2",
+				CreationTimestamp: twoMinutesAgo,
+			},
+			Spec: observerv1alpha1.PodRestartHistorySpec{
+				RestartCount: 2,
+			},
+			Status: observerv1alpha1.PodRestartHistoryStatus{
+				Diagnosis: observerv1alpha1.Diagnosis{
+					RootCause:  "OOMKilled",
+					Category:   "Infrastructure",
+					Confidence: "Medium",
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "test-pod-app-restart-1",
+				CreationTimestamp: fourMinutesAgo,
+			},
+			Spec: observerv1alpha1.PodRestartHistorySpec{
+				RestartCount: 1,
+			},
+			Status: observerv1alpha1.PodRestartHistoryStatus{
+				Diagnosis: observerv1alpha1.Diagnosis{
+					RootCause:  "OOMKilled",
+					Category:   "Infrastructure",
+					Confidence: "Medium",
+				},
+			},
+		},
+	}
+
+	input := DiagnosticInput{
+		ContainerName: "app",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "app",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+					Reason:   "OOMKilled",
+				},
+			},
+		},
+		PriorHistories: priors,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "OOMKilled" {
+		t.Fatalf("expected RootCause OOMKilled, got %s", diag.RootCause)
+	}
+	if !ev.RecurrentFailure {
+		t.Fatalf("expected RecurrentFailure true, got false")
+	}
+	if ev.ConsecutiveFailures != 3 {
+		t.Fatalf("expected ConsecutiveFailures 3, got %d", ev.ConsecutiveFailures)
+	}
+	if diag.Confidence != "High" {
+		t.Fatalf("expected Confidence promoted to High, got %s", diag.Confidence)
+	}
+	if len(ev.PriorRootCauses) != 2 || ev.PriorRootCauses[0] != "OOMKilled" {
+		t.Fatalf("unexpected PriorRootCauses: %v", ev.PriorRootCauses)
+	}
+	if ev.TimeSinceLastRestartSeconds == nil || *ev.TimeSinceLastRestartSeconds <= 0 {
+		t.Fatalf("expected positive TimeSinceLastRestartSeconds, got %v", ev.TimeSinceLastRestartSeconds)
+	}
+}
+
+func TestDiagnoseWithPriorHistories_FailureTransition(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(137)
+	now := time.Now()
+	oneMinAgo := metav1.NewTime(now.Add(-1 * time.Minute))
+
+	priors := []observerv1alpha1.PodRestartHistory{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "test-pod-app-restart-1",
+				CreationTimestamp: oneMinAgo,
+			},
+			Spec: observerv1alpha1.PodRestartHistorySpec{
+				RestartCount: 1,
+			},
+			Status: observerv1alpha1.PodRestartHistoryStatus{
+				Diagnosis: observerv1alpha1.Diagnosis{
+					RootCause:  "DatabaseConnectionExhaustion",
+					Category:   "Application",
+					Confidence: "High",
+				},
+			},
+		},
+	}
+
+	events := []corev1.Event{
+		{
+			Reason:  "Unhealthy",
+			Message: "Liveness probe failed: HTTP probe failed with statuscode: 500",
+		},
+	}
+
+	input := DiagnosticInput{
+		ContainerName: "app",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "app",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+					Reason:   "Error",
+				},
+			},
+		},
+		Events:         events,
+		PriorHistories: priors,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "LivenessProbeFailure" {
+		t.Fatalf("expected RootCause LivenessProbeFailure, got %s", diag.RootCause)
+	}
+	expectedTransition := "DatabaseConnectionExhaustion -> LivenessProbeFailure"
+	if ev.FailureTransition != expectedTransition {
+		t.Fatalf("expected FailureTransition %s, got %s", expectedTransition, ev.FailureTransition)
+	}
+	if ev.RecurrentFailure {
+		t.Fatalf("expected RecurrentFailure false for transitioned failure, got true")
+	}
+}
+
+func TestDiagnose_PHPDeepCrash(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(255)
+
+	logs := `
+[02-Nov-2026 03:00:15 UTC] PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 20480 bytes) in /var/www/html/app/Services/ReportGenerator.php on line 245
+`
+	input := DiagnosticInput{
+		ContainerName: "php-api",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "php-api",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "PHPMemoryLimitExceeded" {
+		t.Fatalf("expected PHPMemoryLimitExceeded, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "PHPMemoryLimitExceeded" {
+		t.Fatalf("expected PHPMemoryLimitExceeded, got: %s", ev.ErrorClass)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "/var/www/html/app/Services/ReportGenerator.php" || ev.CulpritCode.Line != 245 {
+		t.Fatalf("expected culprit code /var/www/html/app/Services/ReportGenerator.php:245, got: %+v", ev.CulpritCode)
 	}
 }

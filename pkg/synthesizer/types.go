@@ -26,6 +26,13 @@ type IncidentContext struct {
 	GracePeriodExceeded       bool
 	ResourceConstraints       string
 	SecurityContextViolations string
+
+	// Historical correlation fields
+	RecurrentFailure            bool
+	ConsecutiveFailures         int
+	FailureTransition           string
+	PriorRootCauses             []string
+	TimeSinceLastRestartSeconds *int64
 }
 
 // InsightResult is the structured diagnostic response containing the root cause chain and actionable fix

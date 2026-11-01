@@ -64,6 +64,13 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 	}
 
 	if lang == "ko" {
+		if inc.RecurrentFailure && inc.ConsecutiveFailures >= 2 {
+			steps = append(steps, fmt.Sprintf("과거 재시작 이력 분석: 동일한 원인(%s)으로 %d회 연속 재시작 발생 (만성적 장애 루프 감지)", inc.RootCause, inc.ConsecutiveFailures))
+		}
+		if inc.FailureTransition != "" {
+			steps = append(steps, fmt.Sprintf("이전 재시작 장애 전이 확인: %s 연쇄 영향 관측", inc.FailureTransition))
+		}
+
 		switch inc.RootCause {
 		case "GracefulShutdownTimeout":
 			steps = append(steps, "쿠버네티스가 파드 종료 또는 롤링 업데이트를 시작하고 프로세스에 SIGTERM(143) 신호를 전달함")
@@ -586,6 +593,30 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 			steps = append(steps, "클라이언트 쿼리 옵션에 비용 상한선인 maximum_bytes_billed가 지정됨")
 			steps = append(steps, "쿼리가 스캔해야 할 예상 데이터 용량이 설정된 바이트 한도를 초과함")
 			steps = append(steps, "BigQuery가 400 Query exceeded limit for bytes billed 오류를 반환하며 쿼리를 중단함")
+		case "PHPMemoryLimitExceeded":
+			steps = append(steps, "PHP 스크립트 실행 중 대용량 객체 또는 버퍼 메모리 할당이 급증함")
+			steps = append(steps, "php.ini의 'memory_limit' 한도에 도달함")
+			steps = append(steps, "PHP 엔진이 'Allowed memory size exhausted' 치명적 오류를 출력하고 프로세스가 비정상 종료됨")
+		case "PHPMaxExecutionTimeExceeded":
+			steps = append(steps, "PHP 스크립트가 블로킹 I/O, 무한 루프 또는 장시간 실행 쿼리를 처리함")
+			steps = append(steps, "php.ini의 'max_execution_time' 실행 시간 타이머가 초과됨")
+			steps = append(steps, "PHP 런타임이 'Maximum execution time exceeded' 오류와 함께 스크립트 처리를 강제 중단함")
+		case "PHPUndefinedFunction":
+			steps = append(steps, "애플리케이션 코드가 PHP 내장 확장 또는 라이브러리 함수를 호출함")
+			steps = append(steps, "컨테이너 이미지에 필수 PHP 확장 모듈(익스텐션)이 설치되지 않았거나 활성화 누락됨")
+			steps = append(steps, "PHP가 'Call to undefined function' Fatal error를 발생시키며 즉시 크래시됨")
+		case "PHPClassNotFound":
+			steps = append(steps, "PHP 클래스 인스턴스화 또는 의존성 주입 시도")
+			steps = append(steps, "Composer 오토로더(vendor/autoload.php) 미로드 또는 패키지 누락")
+			steps = append(steps, "PHP가 'Class not found' Fatal error를 출력하고 프로세스가 중단됨")
+		case "PHPFPMChildrenExhausted":
+			steps = append(steps, "인입 웹 트래픽 급증 또는 백엔드 지연으로 활성 요청이 적체됨")
+			steps = append(steps, "PHP-FPM 풀의 모든 워커 자식 프로세스(pm.max_children)가 소진됨")
+			steps = append(steps, "FPM 마스터가 신규 FastCGI 연결을 수락하지 못해 Nginx/웹서버가 502/504를 반환하고 컨테이너 프로브가 실패함")
+		case "PHPPDOException":
+			steps = append(steps, "PHP 애플리케이션이 PDO/Eloquent를 통해 데이터베이스 연결 또는 쿼리를 실행함")
+			steps = append(steps, "DB 연결 거절 또는 SQL 문법/권한 오류 발생")
+			steps = append(steps, "미처리 PDOException으로 인해 PHP 프로세스가 비정상 종료됨")
 		default:
 			steps = append(steps, fmt.Sprintf("컨테이너 상태 이상이 감지됨 (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -595,6 +626,13 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 		}
 	} else {
 		// English
+		if inc.RecurrentFailure && inc.ConsecutiveFailures >= 2 {
+			steps = append(steps, fmt.Sprintf("Historical restart correlation: recurring failure due to %s detected (%d consecutive occurrences)", inc.RootCause, inc.ConsecutiveFailures))
+		}
+		if inc.FailureTransition != "" {
+			steps = append(steps, fmt.Sprintf("Historical causal transition observed: %s", inc.FailureTransition))
+		}
+
 		switch inc.RootCause {
 		case "GracefulShutdownTimeout":
 			steps = append(steps, "Kubernetes initiated pod termination and delivered SIGTERM (143) to container")
@@ -1018,6 +1056,30 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 			steps = append(steps, "Query job submitted with maximum_bytes_billed cost ceiling")
 			steps = append(steps, "Estimated query data scan bytes exceeded the configured limit")
 			steps = append(steps, "BigQuery aborted execution with 400 Query exceeded limit for bytes billed")
+		case "PHPMemoryLimitExceeded":
+			steps = append(steps, "PHP application dynamic memory consumption spiked rapidly")
+			steps = append(steps, "Exceeded configured 'memory_limit' ceiling in php.ini")
+			steps = append(steps, "PHP engine terminated with 'Allowed memory size exhausted' fatal error")
+		case "PHPMaxExecutionTimeExceeded":
+			steps = append(steps, "PHP script executed blocking I/O, infinite loop, or long-running query")
+			steps = append(steps, "Execution timer reached 'max_execution_time' limit in php.ini")
+			steps = append(steps, "PHP runtime forcibly interrupted script processing with fatal error")
+		case "PHPUndefinedFunction":
+			steps = append(steps, "Application invoked PHP function from uninstalled or disabled extension")
+			steps = append(steps, "Required PHP extension was missing from container image")
+			steps = append(steps, "PHP aborted with 'Call to undefined function' fatal error")
+		case "PHPClassNotFound":
+			steps = append(steps, "PHP attempted class instantiation or dependency resolution")
+			steps = append(steps, "Composer autoload.php was not loaded or required vendor package missing")
+			steps = append(steps, "PHP aborted immediately with 'Class not found' fatal error")
+		case "PHPFPMChildrenExhausted":
+			steps = append(steps, "Incoming web traffic spike or backend latency exhausted all worker processes")
+			steps = append(steps, "PHP-FPM worker pool reached 'pm.max_children' limit")
+			steps = append(steps, "FPM master rejected incoming FastCGI connections, causing webserver 502/504 errors")
+		case "PHPPDOException":
+			steps = append(steps, "PHP application attempted database query via PDO/Eloquent")
+			steps = append(steps, "Database connection refused, timeout, or authentication failure occurred")
+			steps = append(steps, "Unhandled PDOException caused process termination")
 		default:
 			steps = append(steps, fmt.Sprintf("Container termination observed (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -1048,6 +1110,13 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 	}
 
 	if lang == "ko" {
+		if inc.RecurrentFailure && inc.ConsecutiveFailures >= 2 {
+			return fmt.Sprintf("동일한 %s 원인으로 %d번째 연속 비정상 종료되었습니다 (만성 장애 루프 감지)%s.", inc.RootCause, inc.ConsecutiveFailures, culpritStr)
+		}
+		if inc.FailureTransition != "" {
+			return fmt.Sprintf("이전 재시작 장애(%s)의 연쇄 여파로 인해 %s 원인으로 비정상 종료되었습니다%s.", inc.FailureTransition, inc.RootCause, culpritStr)
+		}
+
 		switch inc.RootCause {
 		case "GracefulShutdownTimeout":
 			return "배포 롤아웃 또는 노드 유지보수 중 SIGTERM 수신 후 종료 유예시간(terminationGracePeriodSeconds) 내에 연결 드레인을 완료하지 못해 Kubelet에 의해 SIGKILL(137)로 강제 사살되었습니다."
@@ -1283,12 +1352,31 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 			return "BigQuery 파티션 테이블 쿼리 시 필수 파티션 필터가 누락되어 쿼리가 거부되었습니다."
 		case "BigQueryBytesBilledLimitExceeded":
 			return "BigQuery 쿼리 바이트 청구 한도(maximum_bytes_billed)를 초과하여 쿼리 실행이 차단되었습니다."
+		case "PHPMemoryLimitExceeded":
+			return fmt.Sprintf("PHP 메모리 제한(memory_limit)을 초과하여 스크립트 실행이 중단되었습니다%s.", culpritStr)
+		case "PHPMaxExecutionTimeExceeded":
+			return fmt.Sprintf("PHP 스크립트 최대 실행 시간(max_execution_time)이 초과되어 강제 종료되었습니다%s.", culpritStr)
+		case "PHPUndefinedFunction":
+			return fmt.Sprintf("미설치된 PHP 확장 모듈 또는 정의되지 않은 함수 호출로 인해 비정상 종료되었습니다%s.", culpritStr)
+		case "PHPClassNotFound":
+			return fmt.Sprintf("Composer 오토로드 누락 또는 클래스를 찾을 수 없어 실행이 실패했습니다%s.", culpritStr)
+		case "PHPFPMChildrenExhausted":
+			return "PHP-FPM 워커 풀(pm.max_children)이 고갈되어 신규 웹 요청 처리가 지연되고 헬스체크가 실패했습니다."
+		case "PHPPDOException":
+			return fmt.Sprintf("PHP PDO 데이터베이스 연결 실패 또는 SQL 오류로 인해 프로세스가 중단되었습니다%s.", culpritStr)
 		default:
 			return fmt.Sprintf("컨테이너가 %s 원인으로 비정상 종료되었습니다%s.", inc.RootCause, culpritStr)
 		}
 	}
 
 	// English default
+	if inc.RecurrentFailure && inc.ConsecutiveFailures >= 2 {
+		return fmt.Sprintf("Container terminated consecutively (%d times) due to recurring %s failure%s.", inc.ConsecutiveFailures, inc.RootCause, culpritStr)
+	}
+	if inc.FailureTransition != "" {
+		return fmt.Sprintf("Container failed due to %s resulting from prior transition (%s)%s.", inc.RootCause, inc.FailureTransition, culpritStr)
+	}
+
 	switch inc.RootCause {
 	case "GracefulShutdownTimeout":
 		return "Process exceeded terminationGracePeriodSeconds after SIGTERM and was forcefully killed with SIGKILL (137)."
@@ -1488,12 +1576,35 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 		return "BigQuery partitioned table requires a partition filter over partition columns (requirePartitionFilter=true)."
 	case "BigQueryBytesBilledLimitExceeded":
 		return "BigQuery query exceeded configured limit for bytes billed (maximum_bytes_billed)."
+	case "PHPMemoryLimitExceeded":
+		return fmt.Sprintf("PHP memory_limit exhausted, halting script execution%s.", culpritStr)
+	case "PHPMaxExecutionTimeExceeded":
+		return fmt.Sprintf("PHP max_execution_time exceeded, interrupting process%s.", culpritStr)
+	case "PHPUndefinedFunction":
+		return fmt.Sprintf("PHP fatal error: call to undefined function (missing extension)%s.", culpritStr)
+	case "PHPClassNotFound":
+		return fmt.Sprintf("PHP fatal error: class not found (missing autoload or dependency)%s.", culpritStr)
+	case "PHPFPMChildrenExhausted":
+		return "PHP-FPM worker pool exhausted (pm.max_children reached), causing gateway errors."
+	case "PHPPDOException":
+		return fmt.Sprintf("PHP database connection or query failed via PDO%s.", culpritStr)
 	default:
 		return fmt.Sprintf("Container terminated due to %s%s.", inc.RootCause, culpritStr)
 	}
 }
 
 func buildSuggestedFix(inc IncidentContext, lang string) string {
+	baseFix := getBaseSuggestedFix(inc, lang)
+	if inc.RecurrentFailure && inc.ConsecutiveFailures >= 2 {
+		if lang == "ko" {
+			return fmt.Sprintf("[만성/반복 장애 경고: 동일 원인(%s) %d회 연속 재발] 임시 파드 재기동 대신 최근 배포 리비전 롤백('kubectl rollout undo deployment/<name>')을 즉각 검토하거나 영구적인 근본 해결 조치를 적용하세요.\n\n%s", inc.RootCause, inc.ConsecutiveFailures, baseFix)
+		}
+		return fmt.Sprintf("[CRITICAL RECURRENT FAILURE: %d consecutive %s occurrences] Immediate rollback ('kubectl rollout undo deployment/<name>') or permanent remediation required.\n\n%s", inc.ConsecutiveFailures, inc.RootCause, baseFix)
+	}
+	return baseFix
+}
+
+func getBaseSuggestedFix(inc IncidentContext, lang string) string {
 	if lang == "ko" {
 		switch inc.RootCause {
 		case "GracefulShutdownTimeout":
@@ -1742,6 +1853,22 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 			return "1) 쿼리의 WHERE 절에 대상 테이블의 파티션 컬럼(예: _PARTITIONDATE, _PARTITIONTIME 또는 일자/타임스탬프 필드) 조건을 반드시 포함하세요."
 		case "BigQueryBytesBilledLimitExceeded":
 			return "1) 쿼리 작업 옵션의 'maximum_bytes_billed' 한도를 상향하거나 쿼리에 파티션/클러스터링 필터를 추가하여 스캔 용량을 줄이세요. 2) 'SELECT *' 대신 필요한 컬럼만 명시하세요."
+		case "PHPMemoryLimitExceeded":
+			locStr := ""
+			if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+				locStr = fmt.Sprintf("[%s:%d] ", inc.CulpritCode.File, inc.CulpritCode.Line)
+			}
+			return fmt.Sprintf("1) %sphp.ini에서 'memory_limit = 256M' (또는 512M)로 상향하거나 ini_set('memory_limit', '512M')을 설정하세요. 2) 대용량 DB 조회 시 커서(Cursor)/제너레이터(yield) 또는 chunk()를 사용하여 메모리 누수를 방지하세요.", locStr)
+		case "PHPMaxExecutionTimeExceeded":
+			return "1) php.ini의 'max_execution_time' 설정을 상향하거나 CLI/큐 워커 스크립트에 'set_time_limit(0)'을 설정하세요. 2) 외부 API 호출에 Guzzle 타임아웃(timeout, connect_timeout)을 적용하세요."
+		case "PHPUndefinedFunction":
+			return "1) Dockerfile에서 누락된 PHP 확장 모듈을 빌드 및 활성화하세요 (예: 'RUN docker-php-ext-install pdo_mysql mbstring curl gd bcmath'). 2) 함수명 오탈자를 확인하세요."
+		case "PHPClassNotFound":
+			return "1) 'composer install' 또는 'composer dump-autoload -o'를 실행하여 오토로더 클래스맵을 갱신하세요. 2) 스크립트 진입점에 'require_once __DIR__ . '/vendor/autoload.php';'가 포함되었는지 확인하세요."
+		case "PHPFPMChildrenExhausted":
+			return "1) php-fpm.d/www.conf에서 파드 메모리 한도에 맞추어 'pm.max_children = 50'으로 상향하고 'pm.max_requests = 500'으로 메모리 누수를 방지하세요. 2) 파드 CPU/메모리 사양을 증설하세요."
+		case "PHPPDOException":
+			return "1) DB 접속 환경변수(DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD)를 점검하세요. 2) 데이터베이스 컨테이너/서비스의 가동 상태와 NetworkPolicy를 확인하세요."
 		default:
 			return "직전 컨테이너 로그 및 종료 코드를 확인하여 애플리케이션 설정 및 파드 리소스 사양을 점검하세요."
 		}
@@ -1946,6 +2073,22 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 		return "1) Include partition column (_PARTITIONDATE or timestamp column) conditions in the WHERE clause."
 	case "BigQueryBytesBilledLimitExceeded":
 		return "1) Increase maximum_bytes_billed in job configuration or filter on partitioned and clustered columns. 2) Avoid SELECT *."
+	case "PHPMemoryLimitExceeded":
+		locStr := ""
+		if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+			locStr = fmt.Sprintf("[%s:%d] ", inc.CulpritCode.File, inc.CulpritCode.Line)
+		}
+		return fmt.Sprintf("1) %sIncrease 'memory_limit' in php.ini or via ini_set(). 2) Use generators or database chunking to avoid loading entire datasets into memory.", locStr)
+	case "PHPMaxExecutionTimeExceeded":
+		return "1) Increase 'max_execution_time' in php.ini or call 'set_time_limit(0)'. 2) Configure strict HTTP client timeouts."
+	case "PHPUndefinedFunction":
+		return "1) Install missing PHP extensions in Dockerfile (e.g. 'docker-php-ext-install ...'). 2) Verify function spelling."
+	case "PHPClassNotFound":
+		return "1) Run 'composer dump-autoload -o' to generate classmaps. 2) Ensure vendor/autoload.php is required."
+	case "PHPFPMChildrenExhausted":
+		return "1) Tune 'pm.max_children' in php-fpm.d/www.conf according to container memory. 2) Increase pod resource allocations."
+	case "PHPPDOException":
+		return "1) Check DB connection environment variables. 2) Verify database pod availability and network policies."
 	default:
 		return "Inspect previous container logs and verify pod resource limits and application configurations."
 	}

@@ -511,3 +511,113 @@ func TestSynthesizer_PostgresInFailedSQLTransaction(t *testing.T) {
 		t.Fatalf("expected fix to mention ROLLBACK, got: %s", result.SuggestedFix)
 	}
 }
+
+func TestSynthesizer_RecurrentFailure(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(137)
+
+	incident := IncidentContext{
+		Namespace:           "default",
+		PodName:             "sample-payment-app",
+		ContainerName:       "payment-worker",
+		ExitCode:            &exitCode,
+		RootCause:           "OOMKilled",
+		Category:            "Infrastructure",
+		Confidence:          "High",
+		Language:            "ko",
+		RecurrentFailure:    true,
+		ConsecutiveFailures: 3,
+		PriorRootCauses:     []string{"OOMKilled", "OOMKilled"},
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result.SuggestedFix, "3회 연속 재발") {
+		t.Fatalf("expected chronic warning prefix, got: %s", result.SuggestedFix)
+	}
+	if !strings.Contains(result.SuggestedFix, "kubectl rollout undo") {
+		t.Fatalf("expected rollback guidance, got: %s", result.SuggestedFix)
+	}
+
+	foundHistoryStep := false
+	for _, step := range result.RootCauseChain {
+		if strings.Contains(step.Description, "과거 재시작 이력 분석") || strings.Contains(step.Description, "3회 연속 동일 원인") {
+			foundHistoryStep = true
+			break
+		}
+	}
+	if !foundHistoryStep {
+		t.Fatalf("expected history step in root cause chain, got: %+v", result.RootCauseChain)
+	}
+}
+
+func TestSynthesizer_FailureTransition(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(137)
+
+	incident := IncidentContext{
+		Namespace:         "default",
+		PodName:           "sample-web-api",
+		ContainerName:     "web",
+		ExitCode:          &exitCode,
+		RootCause:         "LivenessProbeFailure",
+		Category:          "Infrastructure",
+		Confidence:        "High",
+		Language:          "ko",
+		FailureTransition: "DatabaseConnectionExhaustion -> LivenessProbeFailure",
+		PriorRootCauses:   []string{"DatabaseConnectionExhaustion"},
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result.InferredContext, "이전 재시작 장애") {
+		t.Fatalf("expected failure transition in inferred context, got: %s", result.InferredContext)
+	}
+
+	foundTransitionStep := false
+	for _, step := range result.RootCauseChain {
+		if strings.Contains(step.Description, "이전 재시작 장애 전이 확인") {
+			foundTransitionStep = true
+			break
+		}
+	}
+	if !foundTransitionStep {
+		t.Fatalf("expected transition step in root cause chain, got: %+v", result.RootCauseChain)
+	}
+}
+
+func TestSynthesizer_PHPDiagnostics(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(255)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "php-fpm-app",
+		ContainerName: "php",
+		ExitCode:      &exitCode,
+		RootCause:     "PHPMemoryLimitExceeded",
+		Category:      "Application",
+		Confidence:    "High",
+		CulpritCode: &observerv1alpha1.CulpritCode{
+			Language: "PHP",
+			File:     "/var/www/html/app/Report.php",
+			Line:     120,
+		},
+		Language: "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(result.SuggestedFix, "memory_limit") {
+		t.Fatalf("expected memory_limit in fix, got: %s", result.SuggestedFix)
+	}
+	if !strings.Contains(result.SuggestedFix, "/var/www/html/app/Report.php:120") {
+		t.Fatalf("expected culprit code in fix, got: %s", result.SuggestedFix)
+	}
+}

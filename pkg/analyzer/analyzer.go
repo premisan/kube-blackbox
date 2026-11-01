@@ -23,12 +23,17 @@ type DiagnosticInput struct {
 	Events          []corev1.Event
 	PreviousLogs    string
 	Language        string // Target localization language ("en", "ko", etc.)
+	PriorHistories  []observerv1alpha1.PodRestartHistory
 }
 
 // Diagnose evaluates container termination status, events, logs, pod specs, and sidecar cascades.
-func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Diagnosis, observerv1alpha1.Evidence) {
-	var evidence observerv1alpha1.Evidence
-	var diagnosis observerv1alpha1.Diagnosis
+func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (diagnosis observerv1alpha1.Diagnosis, evidence observerv1alpha1.Evidence) {
+	var restartedAt time.Time
+
+	// Automatically correlate diagnosis and evidence with prior PRH history on exit
+	defer func() {
+		correlateWithHistory(&diagnosis, &evidence, restartedAt, input.PriorHistories)
+	}()
 
 	lang := input.Language
 	if lang == "" {
@@ -54,7 +59,6 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 		evidence.TerminationReason = termState.Reason
 	}
 
-	var restartedAt time.Time
 	if termState != nil && !termState.FinishedAt.IsZero() {
 		restartedAt = termState.FinishedAt.Time
 		if !termState.StartedAt.IsZero() {
@@ -384,4 +388,67 @@ func containsMemoryKeywords(logs string) bool {
 		strings.Contains(lower, "heap space") ||
 		strings.Contains(lower, "memoryerror") ||
 		strings.Contains(lower, "out of memory")
+}
+
+func correlateWithHistory(diagnosis *observerv1alpha1.Diagnosis, evidence *observerv1alpha1.Evidence, currentRestartedAt time.Time, priors []observerv1alpha1.PodRestartHistory) {
+	if len(priors) == 0 {
+		return
+	}
+
+	var priorCauses []string
+	consecutive := 1
+	matchedCurrent := true
+
+	for i, p := range priors {
+		cause := p.Status.Diagnosis.RootCause
+		if cause != "" {
+			priorCauses = append(priorCauses, cause)
+		}
+		if matchedCurrent && cause == diagnosis.RootCause && cause != "Unknown" {
+			consecutive++
+		} else {
+			matchedCurrent = false
+		}
+
+		// Calculate interval to immediate previous restart
+		if i == 0 {
+			prevTime := p.Spec.RestartedAt.Time
+			if prevTime.IsZero() && !p.CreationTimestamp.IsZero() {
+				prevTime = p.CreationTimestamp.Time
+			}
+			currTime := currentRestartedAt
+			if currTime.IsZero() {
+				currTime = time.Now()
+			}
+			if !prevTime.IsZero() {
+				diff := int64(currTime.Sub(prevTime).Seconds())
+				if diff >= 0 {
+					evidence.TimeSinceLastRestartSeconds = &diff
+				}
+			}
+		}
+	}
+
+	evidence.PriorRootCauses = priorCauses
+	if consecutive >= 2 {
+		evidence.RecurrentFailure = true
+		evidence.ConsecutiveFailures = consecutive
+		diagnosis.Confidence = "High"
+	}
+
+	// Failure transition detection (e.g. DB/Lock issue -> Liveness Probe failure)
+	if len(priors) > 0 {
+		prevCause := priors[0].Status.Diagnosis.RootCause
+		if diagnosis.RootCause == "LivenessProbeFailure" {
+			if strings.HasPrefix(prevCause, "MySQL") || strings.HasPrefix(prevCause, "Postgres") || strings.HasPrefix(prevCause, "ClickHouse") || strings.Contains(prevCause, "Database") || strings.Contains(prevCause, "Hikari") {
+				evidence.FailureTransition = fmt.Sprintf("%s -> LivenessProbeFailure", prevCause)
+			} else if strings.Contains(prevCause, "OOM") || strings.Contains(prevCause, "Memory") {
+				evidence.FailureTransition = fmt.Sprintf("%s -> LivenessProbeFailure", prevCause)
+			}
+		} else if strings.Contains(diagnosis.RootCause, "ConnectionRefused") {
+			if prevCause == "InitContainerFailed" || prevCause == "IstioStartupRaceCondition" {
+				evidence.FailureTransition = fmt.Sprintf("%s -> %s", prevCause, diagnosis.RootCause)
+			}
+		}
+	}
 }
