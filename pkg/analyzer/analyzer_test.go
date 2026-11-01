@@ -1,7 +1,9 @@
 package analyzer
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -731,5 +733,98 @@ func TestDiagnose_ReadOnlyFilesystem(t *testing.T) {
 		t.Fatalf("expected EROFS, got %s", ev.ErrorClass)
 	}
 }
+
+func TestDiagnose_GracePeriodTimeout(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(137)
+	grace := int64(30)
+	now := time.Now()
+	startTime := now.Add(-40 * time.Second)
+
+	input := DiagnosticInput{
+		ContainerName: "web",
+		Pod: &corev1.Pod{
+			Spec: corev1.PodSpec{
+				TerminationGracePeriodSeconds: &grace,
+				Containers: []corev1.Container{
+					{Name: "web"},
+				},
+			},
+		},
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "web",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode:   exitCode,
+					StartedAt:  metav1.Time{Time: startTime},
+					FinishedAt: metav1.Time{Time: now},
+				},
+			},
+		},
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "GracefulShutdownTimeout" {
+		t.Fatalf("expected GracefulShutdownTimeout, got %s", diag.RootCause)
+	}
+	if !ev.GracePeriodExceeded {
+		t.Fatalf("expected GracePeriodExceeded to be true")
+	}
+	if ev.UptimeSeconds == nil || *ev.UptimeSeconds < 30 {
+		t.Fatalf("expected UptimeSeconds >= 30, got %+v", ev.UptimeSeconds)
+	}
+}
+
+func TestDiagnose_CPUThrottlingWithLiveness(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(137)
+	now := time.Now()
+
+	input := DiagnosticInput{
+		ContainerName: "api",
+		Pod: &corev1.Pod{
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "api",
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("100m"),
+							},
+						},
+					},
+				},
+			},
+		},
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "api",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode:   exitCode,
+					FinishedAt: metav1.Time{Time: now},
+				},
+			},
+		},
+		Events: []corev1.Event{
+			{
+				Reason:        "Unhealthy",
+				Message:       "Liveness probe failed: HTTP probe failed with statuscode: 500",
+				LastTimestamp: metav1.Time{Time: now},
+			},
+		},
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "LivenessProbeFailure" {
+		t.Fatalf("expected LivenessProbeFailure, got %s", diag.RootCause)
+	}
+	if !strings.Contains(diag.Summary, "CPU") && !strings.Contains(diag.Summary, "100m") {
+		t.Fatalf("expected CPU throttling note in summary, got: %s", diag.Summary)
+	}
+	if ev.ResourceConstraints == "" || !strings.Contains(ev.ResourceConstraints, "CPULimit") {
+		t.Fatalf("expected ResourceConstraints with CPULimit, got: %s", ev.ResourceConstraints)
+	}
+}
+
 
 

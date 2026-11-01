@@ -34,15 +34,19 @@ type CulpritCode struct {
 
 // Evidence contains the raw collected data that led to the diagnosis
 type Evidence struct {
-	ExitCode          *int32       `json:"exitCode,omitempty"`
-	TerminationReason string       `json:"terminationReason,omitempty"`
-	ErrorClass        string       `json:"errorClass,omitempty"`
-	ErrorLocation     string       `json:"errorLocation,omitempty"`
-	CulpritCode       *CulpritCode `json:"culpritCode,omitempty"`
-	MatchedEvents     []string     `json:"matchedEvents,omitempty"`
-	MatchedLogPattern string       `json:"matchedLogPattern,omitempty"`
-	LastLogSnippet    string       `json:"lastLogSnippet,omitempty"`
-	SidecarCascade    string       `json:"sidecarCascade,omitempty"`
+	ExitCode                  *int32       `json:"exitCode,omitempty"`
+	TerminationReason         string       `json:"terminationReason,omitempty"`
+	ErrorClass                string       `json:"errorClass,omitempty"`
+	ErrorLocation             string       `json:"errorLocation,omitempty"`
+	CulpritCode               *CulpritCode `json:"culpritCode,omitempty"`
+	MatchedEvents             []string     `json:"matchedEvents,omitempty"`
+	MatchedLogPattern         string       `json:"matchedLogPattern,omitempty"`
+	LastLogSnippet            string       `json:"lastLogSnippet,omitempty"`
+	SidecarCascade            string       `json:"sidecarCascade,omitempty"`
+	UptimeSeconds             *int64       `json:"uptimeSeconds,omitempty"`
+	GracePeriodExceeded       bool         `json:"gracePeriodExceeded,omitempty"`
+	ResourceConstraints       string       `json:"resourceConstraints,omitempty"`
+	SecurityContextViolations string       `json:"securityContextViolations,omitempty"`
 }
 
 // ChainStep represents an event or causal step in the failure cascade
@@ -111,6 +115,11 @@ func (in *PodRestartHistory) DeepCopyInto(out *PodRestartHistory) {
 		in, out := &in.Status.Evidence.MatchedEvents, &out.Status.Evidence.MatchedEvents
 		*out = make([]string, len(*in))
 		copy(*out, *in)
+	}
+	if in.Status.Evidence.UptimeSeconds != nil {
+		in, out := &in.Status.Evidence.UptimeSeconds, &out.Status.Evidence.UptimeSeconds
+		*out = new(int64)
+		**out = **in
 	}
 	if in.Status.Insight != nil {
 		in, out := &in.Status.Insight, &out.Status.Insight

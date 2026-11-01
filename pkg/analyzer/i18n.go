@@ -48,6 +48,22 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "컨테이너 진입점 실행 파일이나 셸 명령어를 이미지 PATH에서 찾을 수 없습니다 (Exit code 127).",
 			RecommendedAction: "Dockerfile의 ENTRYPOINT/CMD 경로를 확인하고 베이스 이미지에 필요한 셸 및 바이너리가 존재하는지 확인하세요.",
 		},
+		"GracefulShutdownTimeout": {
+			SummaryTpl:        "프로세스가 SIGTERM 수신 후 종료 유예시간(terminationGracePeriodSeconds: %s) 내에 정상 종료되지 않아 SIGKILL(137)로 강제 사살되었습니다.",
+			RecommendedAction: "SIGTERM 신호 핸들러의 커넥션 드레인 로직을 점검하거나 파드 스펙의 terminationGracePeriodSeconds를 늘리세요.",
+		},
+		"ReadOnlyRootFilesystem": {
+			SummaryTpl:        "읽기 전용 파일시스템(readOnlyRootFilesystem) 제약 상태에서 파일 쓰기 시도로 인해 프로세스가 실패했습니다.",
+			RecommendedAction: "파드 SecurityContext를 확인하고, 임시 쓰기가 필요한 디렉토리(/tmp 등)를 emptyDir 볼륨으로 마운트하세요.",
+		},
+		"HeapCorruption": {
+			SummaryTpl:        "glibc 힙 메모리 손상 (Double Free 또는 잘못된 포인터 해제)으로 인해 비정상 종료되었습니다.",
+			RecommendedAction: "C/C++ 네이티브 확장 모듈 또는 CGO/JNI 바인딩의 메모리 할당 및 해제 로직을 점검하세요.",
+		},
+		"NodeV8FatalError": {
+			SummaryTpl:        "Node.js V8 엔진에서 JavaScript 힙 메모리 고갈로 치명적 오류가 발생했습니다.",
+			RecommendedAction: "NODE_OPTIONS에 '--max-old-space-size'를 확장하거나 객체 캐시 누수를 프로파일링하세요.",
+		},
 		"LivenessProbeFailure": {
 			SummaryTpl:        "Liveness Probe(활성도 검사)가 반복 실패하여 Kubelet이 컨테이너를 재시작했습니다.",
 			RecommendedAction: "헬스체크 엔드포인트(/healthz)의 지연 시간을 점검하고 probe의 timeoutSeconds/failureThreshold를 조정하세요.",
@@ -461,6 +477,22 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 		"InitContainerFailed": {
 			SummaryTpl:        "Application container unable to start due to initContainer '%s' failure.",
 			RecommendedAction: "Inspect logs and termination reason of initContainer '%s'.",
+		},
+		"GracefulShutdownTimeout": {
+			SummaryTpl:        "Process failed to terminate within terminationGracePeriodSeconds (%s) after SIGTERM and was killed by SIGKILL (137).",
+			RecommendedAction: "Optimize application SIGTERM handler connection draining or increase terminationGracePeriodSeconds in pod spec.",
+		},
+		"ReadOnlyRootFilesystem": {
+			SummaryTpl:        "Application crashed attempting to write to read-only filesystem (readOnlyRootFilesystem violation).",
+			RecommendedAction: "Inspect pod securityContext and mount emptyDir volumes for writable locations such as /tmp.",
+		},
+		"HeapCorruption": {
+			SummaryTpl:        "Native glibc heap corruption detected (Double free or corrupted pointer).",
+			RecommendedAction: "Inspect C/C++ native modules or CGO/JNI bindings with AddressSanitizer (ASan).",
+		},
+		"NodeV8FatalError": {
+			SummaryTpl:        "Node.js V8 engine crashed due to JavaScript heap out of memory.",
+			RecommendedAction: "Expand '--max-old-space-size' in NODE_OPTIONS or profile memory leaks.",
 		},
 	},
 }

@@ -122,6 +122,15 @@ spec:
                       type: string
                     sidecarCascade:
                       type: string
+                    uptimeSeconds:
+                      type: integer
+                      format: int64
+                    gracePeriodExceeded:
+                      type: boolean
+                    resourceConstraints:
+                      type: string
+                    securityContextViolations:
+                      type: string
                 insight:
                   type: object
                   properties:

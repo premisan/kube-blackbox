@@ -57,12 +57,85 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 	var restartedAt time.Time
 	if termState != nil && !termState.FinishedAt.IsZero() {
 		restartedAt = termState.FinishedAt.Time
+		if !termState.StartedAt.IsZero() {
+			diff := termState.FinishedAt.Sub(termState.StartedAt.Time).Seconds()
+			if diff >= 0 {
+				secs := int64(diff)
+				evidence.UptimeSeconds = &secs
+			}
+		}
+	}
+
+	// Multi-dimensional: Resource spec & SecurityContext inspection
+	var matchedContainer *corev1.Container
+	if input.Pod != nil {
+		for i := range input.Pod.Spec.Containers {
+			if input.Pod.Spec.Containers[i].Name == input.ContainerName {
+				matchedContainer = &input.Pod.Spec.Containers[i]
+				break
+			}
+		}
+		if matchedContainer == nil {
+			for i := range input.Pod.Spec.InitContainers {
+				if input.Pod.Spec.InitContainers[i].Name == input.ContainerName {
+					matchedContainer = &input.Pod.Spec.InitContainers[i]
+					break
+				}
+			}
+		}
+	}
+
+	if matchedContainer != nil {
+		var resParts []string
+		if !matchedContainer.Resources.Limits.Cpu().IsZero() {
+			resParts = append(resParts, fmt.Sprintf("CPULimit: %s", matchedContainer.Resources.Limits.Cpu().String()))
+		}
+		if !matchedContainer.Resources.Limits.Memory().IsZero() {
+			resParts = append(resParts, fmt.Sprintf("MemLimit: %s", matchedContainer.Resources.Limits.Memory().String()))
+		}
+		if !matchedContainer.Resources.Requests.Memory().IsZero() {
+			resParts = append(resParts, fmt.Sprintf("MemReq: %s", matchedContainer.Resources.Requests.Memory().String()))
+		}
+		if len(resParts) > 0 {
+			evidence.ResourceConstraints = strings.Join(resParts, ", ")
+		}
+
+		var scViolations []string
+		if matchedContainer.SecurityContext != nil && matchedContainer.SecurityContext.ReadOnlyRootFilesystem != nil && *matchedContainer.SecurityContext.ReadOnlyRootFilesystem {
+			if strings.Contains(strings.ToLower(input.PreviousLogs), "read-only file system") || strings.Contains(strings.ToLower(input.PreviousLogs), "erofs") {
+				scViolations = append(scViolations, "ReadOnlyRootFilesystemViolation")
+			}
+		}
+		isRunAsNonRoot := false
+		if (matchedContainer.SecurityContext != nil && matchedContainer.SecurityContext.RunAsNonRoot != nil && *matchedContainer.SecurityContext.RunAsNonRoot) ||
+			(input.Pod.Spec.SecurityContext != nil && input.Pod.Spec.SecurityContext.RunAsNonRoot != nil && *input.Pod.Spec.SecurityContext.RunAsNonRoot) {
+			isRunAsNonRoot = true
+		}
+		if isRunAsNonRoot && (strings.Contains(strings.ToLower(input.PreviousLogs), "permission denied") || (termState != nil && termState.ExitCode == 126)) {
+			scViolations = append(scViolations, "RunAsNonRootPermissionViolation")
+		}
+		if len(scViolations) > 0 {
+			evidence.SecurityContextViolations = strings.Join(scViolations, ", ")
+		}
 	}
 
 	// 1. Analyze Events
 	eventRes := AnalyzeEvents(input.Events, input.ContainerName, restartedAt)
 	if eventRes != nil {
 		evidence.MatchedEvents = eventRes.MatchedEvents
+	}
+
+	// Multi-dimensional: Grace Period Exceedance Evaluation
+	graceSec := int64(30)
+	if input.Pod != nil && input.Pod.Spec.TerminationGracePeriodSeconds != nil {
+		graceSec = *input.Pod.Spec.TerminationGracePeriodSeconds
+	}
+	if termState != nil && termState.ExitCode == 137 && termState.Reason != "OOMKilled" {
+		if evidence.UptimeSeconds != nil && *evidence.UptimeSeconds >= graceSec {
+			if eventRes == nil || len(eventRes.MatchedEvents) == 0 {
+				evidence.GracePeriodExceeded = true
+			}
+		}
 	}
 
 	// 2. Analyze Logs
@@ -143,6 +216,21 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 	if eventRes != nil && eventRes.MatchedRule != nil {
 		setDiag(&diagnosis, eventRes.Category, eventRes.MatchedRule.RootCause, eventRes.MatchedRule.Confidence,
 			eventRes.Summary, eventRes.RecommendedAction, lang, "")
+
+		// Multi-dimensional: Check if Liveness failure was compounded by CPU throttling
+		if eventRes.MatchedRule.RootCause == "LivenessProbeFailure" && matchedContainer != nil && !matchedContainer.Resources.Limits.Cpu().IsZero() {
+			millis := matchedContainer.Resources.Limits.Cpu().MilliValue()
+			if millis > 0 && millis <= 300 {
+				if lang == "ko" {
+					diagnosis.Summary = fmt.Sprintf("%s (낮은 CPU 제한 %dm 설정으로 인한 CFS Throttling 위험 동반)", diagnosis.Summary, millis)
+					diagnosis.RecommendedAction = fmt.Sprintf("%s 또한 Throttling 방지를 위해 CPU Limit 증설을 검토하세요.", diagnosis.RecommendedAction)
+				} else {
+					diagnosis.Summary = fmt.Sprintf("%s (Compounded by tight CPU limit %dm, risking CFS throttling)", diagnosis.Summary, millis)
+					diagnosis.RecommendedAction = fmt.Sprintf("%s Also consider increasing container CPU limit.", diagnosis.RecommendedAction)
+				}
+			}
+		}
+
 		return diagnosis, evidence
 	}
 
@@ -153,10 +241,30 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 		return diagnosis, evidence
 	}
 
+	// ==================== Step 4.5: SecurityContext Constraint Violations ====================
+	if strings.Contains(evidence.SecurityContextViolations, "ReadOnlyRootFilesystemViolation") {
+		setDiag(&diagnosis, "Configuration", "ReadOnlyRootFilesystem", "High",
+			"Application attempted to write to filesystem with readOnlyRootFilesystem enabled.",
+			"Check pod securityContext and mount emptyDir volumes for writable directories such as /tmp.",
+			lang, "")
+		evidence.ErrorClass = "EROFS"
+		return diagnosis, evidence
+	}
+
 	// ==================== Step 5: Combined Heuristic Reasoning ====================
 	if termState != nil {
 		switch termState.ExitCode {
 		case 137: // SIGKILL (128 + 9)
+			// Multi-dimensional: Grace Period Exceedance during graceful shutdown
+			if evidence.GracePeriodExceeded {
+				setDiag(&diagnosis, "Infrastructure", "GracefulShutdownTimeout", "High",
+					fmt.Sprintf("Process failed to terminate within terminationGracePeriodSeconds (%ds) after SIGTERM and was forcefully killed with SIGKILL (137).", graceSec),
+					"Optimize preStop hooks, drain connections faster in SIGTERM handler, or increase terminationGracePeriodSeconds in pod spec.",
+					lang, fmt.Sprintf("%ds", graceSec))
+				evidence.ErrorClass = "GracePeriodTimeout"
+				return diagnosis, evidence
+			}
+
 			if hasMemoryLimit(input.Pod, input.ContainerName) && containsMemoryKeywords(input.PreviousLogs) {
 				setDiag(&diagnosis, "Infrastructure", "ProbableOOMKilled", "High",
 					"Container killed with SIGKILL (137) with memory limit defined and memory exhaustion indicators in log.",
