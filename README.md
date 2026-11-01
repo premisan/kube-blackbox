@@ -18,12 +18,13 @@ Stop digging through past logs and multiple `kubectl` commands. Simply run `kube
 [Pod Restart Detected (restartCount increased)]
        │
        ▼
-1. LastTerminationState Inspection
+1. LastTerminationState & POSIX Signals Inspection
    ├── reason == OOMKilled ─────────────────► [OOMKilled (Confidence: High)]
-   └── exitCode in (126, 127) ──────────────► [PermissionDenied / CommandNotFound]
+   ├── exitCode in (126, 127) ──────────────► [PermissionDenied / CommandNotFound]
+   └── exitCode == 137 & GracePeriod exceeded► [GracefulShutdownTimeout]
        │
        ▼
-2. Recent K8s Events Cross-Check (Probe, Node Eviction, Preemption)
+2. Recent K8s Events & Resource Constraints Cross-Check (Probe, Eviction, CPU Throttling)
    ├── Liveness / Startup Probe Failed ─────► [LivenessProbeFailure / StartupProbeFailure]
    ├── Evicted / Node low on resource ──────► [NodeEviction]
    └── Preempted by higher priority pod ────► [Preempted]
@@ -31,7 +32,8 @@ Stop digging through past logs and multiple `kubectl` commands. Simply run `kube
        ▼
 3. Previous Container Logs & Semantic Traceback (Tail up to 2,000 lines)
    ├── Go panic / JVM OutOfMemoryError ─────► [AppPanic / JVMOOM]
-   ├── .NET NullReference / PHP Fatal ──────► [DotNetNullReference / PHPMemoryExhausted]
+   ├── C/C++ glibc / V8 heap crash ─────────► [HeapCorruption / NodeV8FatalError]
+   ├── read-only file system ───────────────► [ReadOnlyRootFilesystem]
    ├── Address already in use / Redis OOM ──► [PortConflict / RedisOOM]
    ├── Nginx connections / Storage ENOSPC ──► [NginxWorkerConnections / DiskNoSpaceLeft]
    └── Unhandled Exception (Python, Node) ──► [AppUnhandledException]
@@ -68,9 +70,13 @@ kube-blackbox/
 │   │   ├── analyzer_test.go
 │   │   ├── events.go                           # Event correlation & filtering
 │   │   ├── i18n.go                             # Multi-language dictionary
+│   │   ├── knowledge/                          # Embedded signatures & POSIX signal catalog
+│   │   │   ├── exitcodes.go
+│   │   │   ├── signals.go
+│   │   │   └── signatures.go
 │   │   ├── log_patterns.go                     # Deep log signatures & culprit code extraction
 │   │   ├── log_preprocess.go                   # JSON structured log unpacker
-│   │   └── log_preprocess_test.go
+│   │   └── sidecar.go                          # Sidecar and initContainer failure cascade analysis
 │   ├── controller/
 │   │   ├── pod_controller.go                   # Pod Watcher & Async Synthesis Reconciler
 │   │   └── pod_controller_test.go

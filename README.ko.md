@@ -18,20 +18,22 @@
 [파드 재시작 감지 (restartCount 증가)]
        │
        ▼
-1. LastTerminationState 분석
+1. LastTerminationState & POSIX 신호 분석
    ├── reason == OOMKilled ─────────────────► [OOMKilled (Confidence: High)]
-   └── exitCode in (126, 127) ──────────────► [PermissionDenied / CommandNotFound]
+   ├── exitCode in (126, 127) ──────────────► [PermissionDenied / CommandNotFound]
+   └── exitCode == 137 & GracePeriod 초과 ──► [GracefulShutdownTimeout]
        │
        ▼
-2. 최근 K8s Events 교차 대조 (Probe, Node Eviction, Preemption)
+2. 최근 K8s Events 및 리소스 제약 교차 대조 (Probe, Node Eviction, CPU Throttling)
    ├── Liveness / Startup Probe Failed ─────► [LivenessProbeFailure / StartupProbeFailure]
    ├── Evicted / Node low on resource ──────► [NodeEviction]
    └── Preempted by other pod ──────────────► [Preempted]
        │
        ▼
-3. Previous Container Logs & 시맨틱 역추적 (최대 2,000줄)
+3. Previous Container Logs & 시맨틱 역추적
    ├── Go panic / JVM OutOfMemoryError ─────► [AppPanic / JVMOOM]
-   ├── .NET NullReference / PHP Fatal ──────► [DotNetNullReference / PHPMemoryExhausted]
+   ├── C/C++ glibc / V8 heap crash ─────────► [HeapCorruption / NodeV8FatalError]
+   ├── read-only file system ───────────────► [ReadOnlyRootFilesystem]
    ├── Address already in use / Redis OOM ──► [PortConflict / RedisOOM]
    ├── Nginx connections / Storage ENOSPC ──► [NginxWorkerConnections / DiskNoSpaceLeft]
    └── Unhandled Exception (Python, Node) ──► [AppUnhandledException]
@@ -68,9 +70,13 @@ kube-blackbox/
 │   │   ├── analyzer_test.go
 │   │   ├── events.go                           # 이벤트 교차 검증
 │   │   ├── i18n.go                             # 다국어 번역 사전
+│   │   ├── knowledge/                          # 임베디드 시그니처 및 POSIX 신호 사전
+│   │   │   ├── exitcodes.go
+│   │   │   ├── signals.go
+│   │   │   └── signatures.go
 │   │   ├── log_patterns.go                     # 로그 패턴 및 범인 코드(CulpritCode) 추출
 │   │   ├── log_preprocess.go                   # 구조화 JSON 로그 언패커
-│   │   └── log_preprocess_test.go
+│   │   └── sidecar.go                          # 사이드카 및 InitContainer 연쇄 분석
 │   ├── controller/
 │   │   ├── pod_controller.go                   # Pod Watcher & 비동기 합성 Reconciler
 │   │   └── pod_controller_test.go
