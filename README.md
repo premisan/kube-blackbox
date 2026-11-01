@@ -73,7 +73,9 @@ kube-pinger/
 ├── samples/                                    # Sample crash pods for testing
 │   ├── 01-oomkilled.yaml                       # Triggers cgroup OOMKilled
 │   ├── 02-liveness-probe-failure.yaml          # Triggers Liveness Probe failure
-│   └── 03-app-panic.yaml                       # Triggers Go runtime panic
+│   ├── 03-app-panic.yaml                       # Triggers Go runtime panic
+│   ├── 04-python-crash.yaml                    # Triggers Python unhandled exception
+│   └── 05-java-crash.yaml                      # Triggers JVM heap OutOfMemoryError
 ├── .dockerignore
 ├── Dockerfile
 ├── Makefile

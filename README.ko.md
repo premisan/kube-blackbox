@@ -70,10 +70,12 @@ kube-pinger/
 │   └── controller/
 │       ├── pod_controller.go                   # Pod Watcher & Reconciler
 │       └── pod_controller_test.go
-├── samples/                                    # 테스트용 재시작 샘플 파드 3종
+├── samples/                                    # 테스트용 재시작 샘플 파드 5종
 │   ├── 01-oomkilled.yaml                       # OOMKilled 유발
 │   ├── 02-liveness-probe-failure.yaml          # Liveness Probe 실패 유발
-│   └── 03-app-panic.yaml                       # Go 런타임 패닉 크래시 유발
+│   ├── 03-app-panic.yaml                       # Go 런타임 패닉 크래시 유발
+│   ├── 04-python-crash.yaml                    # Python 미처리 예외(Unhandled Exception) 유발
+│   └── 05-java-crash.yaml                      # JVM 힙 메모리 고갈(OutOfMemoryError) 유발
 ├── .dockerignore
 ├── Dockerfile
 ├── Makefile
