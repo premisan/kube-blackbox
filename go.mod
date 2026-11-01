@@ -1,4 +1,4 @@
-module github.com/premisan/kube-pinger
+module github.com/premisan/kube-blackbox
 
 go 1.22.0
 

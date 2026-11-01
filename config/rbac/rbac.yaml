@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kube-pinger-controller-manager
-  namespace: kube-pinger-system
+  name: kube-blackbox
+  namespace: kube-blackbox
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kube-pinger-manager-role
+  name: kube-blackbox
 rules:
   # Pod and Pod logs permissions
   - apiGroups: [""]
@@ -35,12 +35,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kube-pinger-manager-rolebinding
+  name: kube-blackbox
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kube-pinger-manager-role
+  name: kube-blackbox
 subjects:
   - kind: ServiceAccount
-    name: kube-pinger-controller-manager
-    namespace: kube-pinger-system
+    name: kube-blackbox
+    namespace: kube-blackbox

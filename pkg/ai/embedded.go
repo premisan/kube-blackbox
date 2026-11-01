@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	observerv1alpha1 "github.com/premisan/kube-pinger/api/v1alpha1"
+	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
 )
 
 // EmbeddedEngine performs deterministic semantic synthesis and multi-language explanation

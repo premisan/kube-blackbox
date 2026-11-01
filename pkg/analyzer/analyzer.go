@@ -7,7 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	observerv1alpha1 "github.com/premisan/kube-pinger/api/v1alpha1"
+	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
 )
 
 type DiagnosticEngine struct{}

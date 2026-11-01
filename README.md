@@ -1,12 +1,12 @@
-# Kube-Pinger (Pod Restart Observer)
+# Kube-Blackbox (Pod Restart Observer & Flight Recorder)
 
-[![Docker Hub](https://img.shields.io/docker/pulls/premisan0/kube-pinger?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/premisan0/kube-pinger)
-[![Go Report Card](https://goreportcard.com/badge/github.com/premisan/kube-pinger)](https://goreportcard.com/report/github.com/premisan/kube-pinger)
+[![Docker Hub](https://img.shields.io/docker/pulls/premisan0/kube-blackbox?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/premisan0/kube-blackbox)
+[![Go Report Card](https://goreportcard.com/badge/github.com/premisan/kube-blackbox)](https://goreportcard.com/report/github.com/premisan/kube-blackbox)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > [한국어 (Korean Version)](README.ko.md)
 
-**Kube-Pinger** is a lightweight Kubernetes controller that monitors pod restarts in real time, automatically deduces root causes via rule-based heuristics across **LastTerminationState**, **Kubelet Events**, and **Previous Container Logs**, and records the diagnosis directly into a custom resource (`PodRestartHistory`).
+**Kube-Blackbox** is an intelligent Kubernetes controller that monitors pod restarts in real time, automatically deduces root causes via rule-based heuristics and local AI semantic reasoning across **LastTerminationState**, **Kubelet Events**, and **Previous Container Logs**, and records the diagnosis directly into a custom resource (`PodRestartHistory`).
 
 Stop digging through past logs and multiple `kubectl` commands. Simply run `kubectl get prh` to see why your pods restarted.
 
@@ -29,15 +29,16 @@ Stop digging through past logs and multiple `kubectl` commands. Simply run `kube
    └── Preempted by higher priority pod ────► [Preempted]
        │
        ▼
-3. Previous Container Logs Regex Pattern Matching (Tail 100 lines)
+3. Previous Container Logs & Semantic Traceback (Tail up to 2,000 lines)
    ├── Go panic / JVM OutOfMemoryError ─────► [AppPanic / JVMOOM]
-   ├── Address already in use ──────────────► [PortConflict]
-   ├── Fatal error / SIGSEGV ───────────────► [AppFatalError / SegmentationFault]
+   ├── .NET NullReference / PHP Fatal ──────► [DotNetNullReference / PHPMemoryExhausted]
+   ├── Address already in use / Redis OOM ──► [PortConflict / RedisOOM]
+   ├── Nginx connections / Storage ENOSPC ──► [NginxWorkerConnections / DiskNoSpaceLeft]
    └── Unhandled Exception (Python, Node) ──► [AppUnhandledException]
        │
        ▼
-4. Fallback Heuristic (ExitCode Mapping)
-   └── 137(Sigkill), 143(Sigterm), 139(Sigsegv), 1(RuntimeError), 0(ExitedNormally)
+4. Local AI Semantic Reasoning (Async Worker)
+   └── Generates RootCauseChain, CulpritCode, and Actionable Fix in Target Language
        │
        ▼
 [Create / Update PodRestartHistory CRD]
@@ -48,7 +49,7 @@ Stop digging through past logs and multiple `kubectl` commands. Simply run `kube
 ## 2. Project Structure
 
 ```text
-kube-pinger/
+kube-blackbox/
 ├── api/
 │   └── v1alpha1/
 │       ├── groupversion_info.go
@@ -96,43 +97,43 @@ kube-pinger/
 
 ## 3. Kubernetes Deployment Guide
 
-The official container image `premisan0/kube-pinger:latest` supports multi-architecture (`linux/amd64` and `linux/arm64`). You can deploy it to any Kubernetes cluster (AWS EKS, GKE, Docker Desktop, kind, k3s, minikube) without building locally.
+The official container image `premisan0/kube-blackbox:latest` supports multi-architecture (`linux/amd64` and `linux/arm64`). You can deploy it to any Kubernetes cluster (AWS EKS, GKE, Docker Desktop, kind, k3s, minikube) without building locally.
 
 ### Step 1: Install CRD
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/premisan/kube-pinger/main/config/crd/bases/observer.io_podrestarthistories.yaml
+kubectl apply -f https://raw.githubusercontent.com/premisan/kube-blackbox/main/config/crd/bases/observer.io_podrestarthistories.yaml
 # Or with local clone:
 # kubectl apply -f config/crd/bases/observer.io_podrestarthistories.yaml
 ```
 
 ### Step 2: Deploy Controller
-Deploys `kube-pinger-system` namespace, RBAC permissions, and the controller deployment:
+Deploys `kube-blackbox` namespace, RBAC permissions, and the controller deployment:
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/premisan/kube-pinger/main/config/deploy/deploy.yaml
+kubectl apply -f https://raw.githubusercontent.com/premisan/kube-blackbox/main/config/deploy/deploy.yaml
 # Or with local clone:
 # kubectl apply -f config/deploy/deploy.yaml
 ```
 
 ### Step 3: Verify Controller Status
-By default, Kube-Pinger deploys in a 2-replica High Availability (HA) configuration using Kubernetes Leader Election (`coordination.k8s.io/leases`):
+By default, Kube-Blackbox deploys in a 2-replica High Availability (HA) configuration using Kubernetes Leader Election (`coordination.k8s.io/leases`):
 ```bash
-kubectl get pods -n kube-pinger-system
+kubectl get pods -n kube-blackbox
 ```
 *Example Output:*
 ```text
-NAME                                             READY   STATUS    RESTARTS   AGE
-kube-pinger-controller-manager-5f7bbd747d-abc12   1/1     Running   0          20s
-kube-pinger-controller-manager-5f7bbd747d-xyz34   1/1     Running   0          20s
+NAME                             READY   STATUS    RESTARTS   AGE
+kube-blackbox-5f7bbd747d-abc12   1/1     Running   0          20s
+kube-blackbox-5f7bbd747d-xyz34   1/1     Running   0          20s
 ```
 
 Check real-time controller logs (Active Leader will show `Successfully acquired lease` and `Starting workers`):
 ```bash
-kubectl logs -f deployment/kube-pinger-controller-manager -n kube-pinger-system
+kubectl logs -f deployment/kube-blackbox -n kube-blackbox
 ```
 
 ### Controller Retention, HA & AI Configuration Flags
 
-Kube-Pinger includes built-in HA, AI semantic reasoning, and safeguards to protect etcd from flooding:
+Kube-Blackbox includes built-in HA, AI semantic reasoning, and safeguards to protect etcd from flooding:
 - **`--leader-elect`** (Default: `true`): Enables Active-Standby leader election via Kubernetes Leases for safe multi-replica deployments.
 - **`--analysis-language`** (Default: `en`): Primary reporting language for diagnoses and AI insights (`en`, `ko`, `ja`, etc.). Can be overridden globally via `ANALYSIS_LANGUAGE` env var or per-pod via `observer.io/language` annotation.
 - **`--enable-ai`** (Default: `true`): Enables asynchronous semantic reasoning to produce detailed failure cascades (`rootCauseChain`) and actionable code fixes (`suggestedFix`).
@@ -145,7 +146,7 @@ Kube-Pinger includes built-in HA, AI semantic reasoning, and safeguards to prote
 
 ## 4. Local Development (Optional)
 
-You can also run Kube-Pinger as a local Go process targeting your current kubeconfig context:
+You can also run Kube-Blackbox as a local Go process targeting your current kubeconfig context:
 
 ```bash
 # 1) Register CRD
@@ -158,10 +159,10 @@ go run main.go
 To build container images locally:
 ```bash
 # Local image build
-docker build -t premisan0/kube-pinger:latest .
+docker build -t premisan0/kube-blackbox:latest .
 
 # Multi-arch image build via buildx
-docker buildx build --platform linux/amd64,linux/arm64 -t premisan0/kube-pinger:latest --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t premisan0/kube-blackbox:latest --push .
 ```
 
 ---

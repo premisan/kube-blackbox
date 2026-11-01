@@ -1,6 +1,6 @@
 .PHONY: all test build run docker-build deploy undeploy install-crd deploy-samples delete-samples clean
 
-IMAGE ?= premisan0/kube-pinger:latest
+IMAGE ?= premisan0/kube-blackbox:latest
 
 all: test build
 
@@ -8,7 +8,7 @@ test:
 	go test -v ./...
 
 build:
-	go build -o bin/kube-pinger main.go
+	go build -o bin/kube-blackbox main.go
 
 run:
 	go run main.go

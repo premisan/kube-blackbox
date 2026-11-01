@@ -1,21 +1,21 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: kube-pinger-system
+  name: kube-blackbox
   labels:
-    app.kubernetes.io/name: kube-pinger
-    app.kubernetes.io/part-of: kube-pinger
+    app.kubernetes.io/name: kube-blackbox
+    app.kubernetes.io/part-of: kube-blackbox
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kube-pinger-controller-manager
-  namespace: kube-pinger-system
+  name: kube-blackbox
+  namespace: kube-blackbox
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kube-pinger-manager-role
+  name: kube-blackbox
 rules:
   # Pod and Pod logs permissions
   - apiGroups: [""]
@@ -43,44 +43,45 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kube-pinger-manager-rolebinding
+  name: kube-blackbox
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kube-pinger-manager-role
+  name: kube-blackbox
 subjects:
   - kind: ServiceAccount
-    name: kube-pinger-controller-manager
-    namespace: kube-pinger-system
+    name: kube-blackbox
+    namespace: kube-blackbox
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kube-pinger-controller-manager
-  namespace: kube-pinger-system
+  name: kube-blackbox
+  namespace: kube-blackbox
   labels:
-    control-plane: controller-manager
-    app.kubernetes.io/name: kube-pinger
+    app.kubernetes.io/name: kube-blackbox
+    app.kubernetes.io/part-of: kube-blackbox
 spec:
   replicas: 2
   selector:
     matchLabels:
-      control-plane: controller-manager
+      app: kube-blackbox
   template:
     metadata:
       labels:
-        control-plane: controller-manager
+        app: kube-blackbox
     spec:
-      serviceAccountName: kube-pinger-controller-manager
+      serviceAccountName: kube-blackbox
       terminationGracePeriodSeconds: 10
       containers:
-        - name: manager
-          image: premisan0/kube-pinger:v0.3.2
+        - name: kube-blackbox
+          image: premisan0/kube-blackbox:latest
           imagePullPolicy: Always
           command:
             - /manager
           args:
             - --leader-elect=true
+            - --leader-election-namespace=kube-blackbox
             - --health-probe-bind-address=:8081
             - --metrics-bind-address=:8080
             - --max-history-per-container=5

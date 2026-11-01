@@ -22,9 +22,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	observerv1alpha1 "github.com/premisan/kube-pinger/api/v1alpha1"
-	"github.com/premisan/kube-pinger/pkg/ai"
-	"github.com/premisan/kube-pinger/pkg/analyzer"
+	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
+	"github.com/premisan/kube-blackbox/pkg/ai"
+	"github.com/premisan/kube-blackbox/pkg/analyzer"
 )
 
 // PodReconciler reconciles Pod restarts, creates diagnoses, and manages retention & TTL.

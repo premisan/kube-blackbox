@@ -1,12 +1,12 @@
-# Kube-Pinger (Pod Restart Observer)
+# Kube-Blackbox (Pod Restart Observer & Flight Recorder)
 
-[![Docker Hub](https://img.shields.io/docker/pulls/premisan0/kube-pinger?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/premisan0/kube-pinger)
-[![Go Report Card](https://goreportcard.com/badge/github.com/premisan/kube-pinger)](https://goreportcard.com/report/github.com/premisan/kube-pinger)
+[![Docker Hub](https://img.shields.io/docker/pulls/premisan0/kube-blackbox?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/premisan0/kube-blackbox)
+[![Go Report Card](https://goreportcard.com/badge/github.com/premisan/kube-blackbox)](https://goreportcard.com/report/github.com/premisan/kube-blackbox)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > [English Version](README.md)
 
-쿠버네티스 파드의 재시작(`restartCount` 증가)을 실시간으로 감지하고 종료 상태(`LastTerminationState`), 쿠버네티스 이벤트(`Events`), 직전 컨테이너 로그(`Previous Logs`)를 교차 분석하여 근본 원인을 진단한 뒤 `PodRestartHistory` CRD로 자동 기록하는 쿠버네티스 컨트롤러입니다.
+쿠버네티스 파드의 재시작(`restartCount` 증가)을 실시간으로 감지하고 종료 상태(`LastTerminationState`), 쿠버네티스 이벤트(`Events`), 직전 컨테이너 로그(`Previous Logs`)를 로컬 AI 및 규칙 기반 엔진으로 교차 분석하여 근본 원인과 인과관계 사슬을 `PodRestartHistory` CRD로 자동 기록하는 쿠버네티스 지능형 관측 컨트롤러입니다.
 
 파드가 재시작되었을 때 여러 `kubectl` 명령어와 과거 로그를 일일이 뒤질 필요 없이, `kubectl get prh` 명령어로 재시작 원인을 한 번에 파악할 수 있습니다.
 
@@ -29,15 +29,16 @@
    └── Preempted by other pod ──────────────► [Preempted]
        │
        ▼
-3. Previous Container Logs 정규식 패턴 분석 (Tail 100 lines)
+3. Previous Container Logs & 시맨틱 역추적 (최대 2,000줄)
    ├── Go panic / JVM OutOfMemoryError ─────► [AppPanic / JVMOOM]
-   ├── Address already in use ──────────────► [PortConflict]
-   ├── Fatal error / SIGSEGV ───────────────► [AppFatalError / SegmentationFault]
+   ├── .NET NullReference / PHP Fatal ──────► [DotNetNullReference / PHPMemoryExhausted]
+   ├── Address already in use / Redis OOM ──► [PortConflict / RedisOOM]
+   ├── Nginx connections / Storage ENOSPC ──► [NginxWorkerConnections / DiskNoSpaceLeft]
    └── Unhandled Exception (Python, Node) ──► [AppUnhandledException]
        │
        ▼
-4. Fallback (ExitCode 기반 휴리스틱 매핑)
-   └── 137(Sigkill), 143(Sigterm), 139(Sigsegv), 1(RuntimeError), 0(ExitedNormally)
+4. Local AI 시맨틱 추론 (비동기 워커)
+   └── 지정 언어로 원인 연쇄 사슬(RootCauseChain), 범인 코드(CulpritCode) 및 코드 수정 가이드 자동 생성
        │
        ▼
 [PodRestartHistory CRD 생성 및 상태 기록]
@@ -48,7 +49,7 @@
 ## 2. 프로젝트 구조
 
 ```text
-kube-pinger/
+kube-blackbox/
 ├── api/
 │   └── v1alpha1/
 │       ├── groupversion_info.go
@@ -73,7 +74,8 @@ kube-pinger/
 │   │   ├── events.go                           # 이벤트 교차 검증
 │   │   ├── i18n.go                             # 다국어 번역 사전
 │   │   ├── log_patterns.go                     # 로그 패턴 및 범인 코드(CulpritCode) 추출
-│   │   └── log_preprocess.go                   # 구조화 JSON 로그 언패커
+│   │   ├── log_preprocess.go                   # 구조화 JSON 로그 언패커
+│   │   └── log_preprocess_test.go
 │   └── controller/
 │       ├── pod_controller.go                   # Pod Watcher & 비동기 AI Reconciler
 │       └── pod_controller_test.go
@@ -95,19 +97,19 @@ kube-pinger/
 
 ## 3. 쿠버네티스 클러스터 배포 가이드
 
-`premisan0/kube-pinger:latest` 이미지는 `linux/amd64` 및 `linux/arm64` 멀티 아키텍처를 공식 지원하므로, 어떤 클러스터 환경(Intel x86, Apple Silicon, AWS Graviton 등)에서든 추가 빌드 없이 즉시 배포할 수 있습니다.
+`premisan0/kube-blackbox:latest` 이미지는 `linux/amd64` 및 `linux/arm64` 멀티 아키텍처를 공식 지원하므로, 어떤 클러스터 환경(Intel x86, Apple Silicon, AWS Graviton 등)에서든 추가 빌드 없이 즉시 배포할 수 있습니다.
 
 ### 1단계: CRD 등록
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/premisan/kube-pinger/main/config/crd/bases/observer.io_podrestarthistories.yaml
+kubectl apply -f https://raw.githubusercontent.com/premisan/kube-blackbox/main/config/crd/bases/observer.io_podrestarthistories.yaml
 # 또는 로컬 파일인 경우:
 # kubectl apply -f config/crd/bases/observer.io_podrestarthistories.yaml
 ```
 
 ### 2단계: 컨트롤러 배포
-`kube-pinger-system` 네임스페이스, RBAC 권한, Deployment 컨트롤러가 한 번에 배포됩니다.
+`kube-blackbox` 네임스페이스, RBAC 권한, Deployment 컨트롤러가 한 번에 배포됩니다:
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/premisan/kube-pinger/main/config/deploy/deploy.yaml
+kubectl apply -f https://raw.githubusercontent.com/premisan/kube-blackbox/main/config/deploy/deploy.yaml
 # 또는 로컬 파일인 경우:
 # kubectl apply -f config/deploy/deploy.yaml
 ```
@@ -115,23 +117,23 @@ kubectl apply -f https://raw.githubusercontent.com/premisan/kube-pinger/main/con
 ### 3단계: 배포 상태 확인
 기본적으로 쿠버네티스 리더 선출(Leader Election)을 통해 2개의 리플리카가 Active-Standby 고가용성(HA) 구조로 자동 배포됩니다:
 ```bash
-kubectl get pods -n kube-pinger-system
+kubectl get pods -n kube-blackbox
 ```
 *출력 예시:*
 ```text
-NAME                                             READY   STATUS    RESTARTS   AGE
-kube-pinger-controller-manager-5f7bbd747d-abc12   1/1     Running   0          25s
-kube-pinger-controller-manager-5f7bbd747d-xyz34   1/1     Running   0          25s
+NAME                             READY   STATUS    RESTARTS   AGE
+kube-blackbox-5f7bbd747d-abc12   1/1     Running   0          25s
+kube-blackbox-5f7bbd747d-xyz34   1/1     Running   0          25s
 ```
 
 컨트롤러 실시간 로그 확인 (리더 파드가 분산 락을 획득하고 작업을 수행합니다):
 ```bash
-kubectl logs -f deployment/kube-pinger-controller-manager -n kube-pinger-system
+kubectl logs -f deployment/kube-blackbox -n kube-blackbox
 ```
 
 ### 컨트롤러 설정 플래그 (AI 및 다국어 지원, HA, 보존 정책)
 
-Kube-Pinger는 다국어 AI 진단, 고가용성(HA) 및 etcd 부하를 방지하기 위한 안전장치를 기본 탑재하고 있습니다:
+Kube-Blackbox는 다국어 AI 진단, 고가용성(HA) 및 etcd 부하를 방지하기 위한 안전장치를 기본 탑재하고 있습니다:
 - `--leader-elect` (기본값: `true`): `coordination.k8s.io/leases` 분산 락을 이용한 Active-Standby 리더 선출을 활성화합니다.
 - `--analysis-language` (기본값: `en`): 진단서 및 AI 인사이트의 기본 출력 언어 설정 (`en`, `ko`, `ja` 등 지원). 환경변수 `ANALYSIS_LANGUAGE` 또는 개별 파드의 `observer.io/language` 어노테이션으로 오버라이드 가능.
 - `--enable-ai` (기본값: `true`): 비동기 AI 시맨틱 추론 엔진을 활성화하여 근본 원인 연쇄 사슬(`rootCauseChain`) 및 코드 수정 가이드(`suggestedFix`)를 자동 생성.
@@ -157,10 +159,10 @@ go run main.go
 직접 Docker 이미지를 빌드하려는 경우:
 ```bash
 # 로컬 빌드
-docker build -t premisan0/kube-pinger:latest .
+docker build -t premisan0/kube-blackbox:latest .
 
 # 멀티 아키텍처 빌드 (buildx)
-docker buildx build --platform linux/amd64,linux/arm64 -t premisan0/kube-pinger:latest --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t premisan0/kube-blackbox:latest --push .
 ```
 
 ---
@@ -233,9 +235,15 @@ kubectl delete -f samples/ --ignore-not-found
 # 또는 Makefile 이용:
 # make delete-samples
 
-# kube-pinger 컨트롤러 및 RBAC 언디플로이
+# kube-blackbox 컨트롤러 및 RBAC 언디플로이
 kubectl delete -f config/deploy/deploy.yaml
 
 # CRD 삭제 (선택)
 kubectl delete -f config/crd/bases/observer.io_podrestarthistories.yaml
 ```
+
+---
+
+## 7. 라이선스
+
+MIT 라이선스에 따라 배포됩니다. 자세한 내용은 `LICENSE`를 참고하세요.

@@ -15,9 +15,9 @@ import (
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
-	observerv1alpha1 "github.com/premisan/kube-pinger/api/v1alpha1"
-	"github.com/premisan/kube-pinger/pkg/ai"
-	"github.com/premisan/kube-pinger/pkg/analyzer"
+	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
+	"github.com/premisan/kube-blackbox/pkg/ai"
+	"github.com/premisan/kube-blackbox/pkg/analyzer"
 )
 
 func TestGenerateCRName(t *testing.T) {

@@ -14,10 +14,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	observerv1alpha1 "github.com/premisan/kube-pinger/api/v1alpha1"
-	"github.com/premisan/kube-pinger/pkg/ai"
-	"github.com/premisan/kube-pinger/pkg/analyzer"
-	"github.com/premisan/kube-pinger/pkg/controller"
+	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
+	"github.com/premisan/kube-blackbox/pkg/ai"
+	"github.com/premisan/kube-blackbox/pkg/analyzer"
+	"github.com/premisan/kube-blackbox/pkg/controller"
 )
 
 var (
@@ -51,7 +51,7 @@ func main() {
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
-	flag.StringVar(&leaderElectionNamespace, "leader-election-namespace", "kube-pinger-system",
+	flag.StringVar(&leaderElectionNamespace, "leader-election-namespace", "kube-blackbox",
 		"Namespace in which to manage the leader election lease.")
 	flag.IntVar(&maxHistoryPerContainer, "max-history-per-container", 5, "Maximum number of PodRestartHistory records to retain per container.")
 	flag.DurationVar(&historyTTL, "history-ttl", 7*24*time.Hour, "Time-to-live duration for PodRestartHistory records before garbage collection (e.g. 168h for 7 days).")
@@ -110,7 +110,7 @@ func main() {
 		},
 		HealthProbeBindAddress:  probeAddr,
 		LeaderElection:          enableLeaderElection,
-		LeaderElectionID:        "kube-pinger-leader-election",
+		LeaderElectionID:        "kube-blackbox-leader-election",
 		LeaderElectionNamespace: leaderElectionNamespace,
 	})
 	if err != nil {
@@ -131,7 +131,7 @@ func main() {
 	}
 	aiEngine := ai.NewEngine(aiCfg)
 
-	setupLog.Info("Configured Kube-Pinger controller",
+	setupLog.Info("Configured Kube-Blackbox controller",
 		"enableAI", enableAI,
 		"aiProvider", aiProvider,
 		"analysisLanguage", analysisLanguage,
