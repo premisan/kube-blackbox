@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
+	"github.com/premisan/kube-blackbox/pkg/analyzer/knowledge"
 )
 
 type LogRule struct {
@@ -991,7 +992,172 @@ type LogAnalysisResult struct {
 	RecommendedAction string
 }
 
-// AnalyzeLogs searches previous container logs for known failure patterns.
+var (
+	domainRulesIndex map[string][]*LogRule
+	allIndexedRules  []*LogRule
+)
+
+func init() {
+	// Bridge embedded signatures from knowledge catalog into active log rules
+	for _, sig := range knowledge.EmbeddedSignatures {
+		s := sig
+		r := LogRule{
+			Name:              s.ID,
+			Category:          s.Category,
+			RootCause:         s.RootCause,
+			Confidence:        s.Confidence,
+			Regex:             s.Pattern,
+			SummaryTpl:        s.SummaryEn,
+			RecommendedAction: s.ActionEn,
+			ExtractClass:      func(m []string) string { return s.ErrorClass },
+		}
+		if s.Domain == "cpp" {
+			r.ExtractLocation = extractCppLocation
+			r.ExtractCulprit = extractCppCulprit
+		} else if s.Domain == "jvm" {
+			r.ExtractLocation = extractJavaLocation
+			r.ExtractCulprit = extractJavaCulprit
+		} else if s.Domain == "python" {
+			r.ExtractLocation = extractPythonLocation
+			r.ExtractCulprit = extractPythonCulprit
+		} else if s.Domain == "node" {
+			r.ExtractLocation = extractNodeLocation
+			r.ExtractCulprit = extractNodeCulprit
+		}
+		logRules = append(logRules, r)
+	}
+
+	// Build indexed domain mapping for hierarchical two-tier matching
+	domainRulesIndex = make(map[string][]*LogRule)
+	allIndexedRules = make([]*LogRule, len(logRules))
+	for i := range logRules {
+		r := &logRules[i]
+		allIndexedRules[i] = r
+		dom := classifyRuleDomain(r.Name)
+		domainRulesIndex[dom] = append(domainRulesIndex[dom], r)
+	}
+}
+
+func classifyRuleDomain(name string) string {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasPrefix(lower, "jvm") || strings.HasPrefix(lower, "spring") || strings.HasPrefix(lower, "kafka") || strings.HasPrefix(lower, "elastic"):
+		return "jvm"
+	case strings.HasPrefix(lower, "go"):
+		return "go"
+	case strings.HasPrefix(lower, "python") || strings.HasPrefix(lower, "pytorch"):
+		return "python"
+	case strings.HasPrefix(lower, "node"):
+		return "node"
+	case strings.HasPrefix(lower, "dotnet"):
+		return "dotnet"
+	case strings.HasPrefix(lower, "rust"):
+		return "rust"
+	case strings.HasPrefix(lower, "native") || strings.Contains(lower, "segfault") || strings.Contains(lower, "buserror") || strings.Contains(lower, "aborted"):
+		return "cpp"
+	case strings.HasPrefix(lower, "php") || strings.HasPrefix(lower, "ruby"):
+		return "php_ruby"
+	case strings.HasPrefix(lower, "postgres") || strings.HasPrefix(lower, "mysql") || strings.HasPrefix(lower, "redis") || strings.HasPrefix(lower, "mongo") || strings.HasPrefix(lower, "rabbit"):
+		return "database"
+	case strings.HasPrefix(lower, "nginx") || strings.HasPrefix(lower, "envoy"):
+		return "web_proxy"
+	case strings.HasPrefix(lower, "disk") || strings.HasPrefix(lower, "storage") || strings.HasPrefix(lower, "filedescriptor"):
+		return "storage"
+	case strings.HasPrefix(lower, "network") || strings.Contains(lower, "address") || strings.Contains(lower, "connection") || strings.Contains(lower, "dns"):
+		return "network"
+	default:
+		return "general"
+	}
+}
+
+func fastDetectDomains(logs string) []string {
+	var domains []string
+	lower := strings.ToLower(logs)
+
+	if strings.Contains(lower, "java") || strings.Contains(lower, "outofmemoryerror") || strings.Contains(lower, "exception in thread") || strings.Contains(lower, "\tat ") || strings.Contains(lower, "spring") || strings.Contains(lower, "hikaripool") || strings.Contains(lower, "hs_err") {
+		domains = append(domains, "jvm")
+	}
+	if strings.Contains(lower, "panic:") || strings.Contains(lower, "goroutine ") || strings.Contains(lower, "fatal error: concurrent map") || strings.Contains(lower, "all goroutines are asleep") {
+		domains = append(domains, "go")
+	}
+	if strings.Contains(lower, "traceback (most recent call last)") || strings.Contains(lower, "file \"") || strings.Contains(lower, "fatal python error") || strings.Contains(lower, "faulthandler") {
+		domains = append(domains, "python")
+	}
+	if strings.Contains(lower, "node_modules") || strings.Contains(lower, "typeerror") || strings.Contains(lower, "unhandledpromiserejection") || strings.Contains(lower, "javascript heap out of memory") {
+		domains = append(domains, "node")
+	}
+	if strings.Contains(lower, "system.") || strings.Contains(lower, "nullreferenceexception") || strings.Contains(lower, "stackoverflowexception") {
+		domains = append(domains, "dotnet")
+	}
+	if strings.Contains(lower, "panicked at") || strings.Contains(lower, "called `result::unwrap()`") || strings.Contains(lower, "called `option::unwrap()`") {
+		domains = append(domains, "rust")
+	}
+	if strings.Contains(lower, "malloc():") || strings.Contains(lower, "double free") || strings.Contains(lower, "stack smashing") || strings.Contains(lower, "segmentation fault") || strings.Contains(lower, "sigsegv") || strings.Contains(lower, "sigbus") || strings.Contains(lower, "sigabrt") {
+		domains = append(domains, "cpp")
+	}
+	if strings.Contains(lower, "read-only file system") || strings.Contains(lower, "erofs") || strings.Contains(lower, "too many open files") || strings.Contains(lower, "no space left on device") {
+		domains = append(domains, "storage")
+	}
+	if strings.Contains(lower, "connection refused") || strings.Contains(lower, "address already in use") || strings.Contains(lower, "temporary failure in name resolution") || strings.Contains(lower, "econnrefused") {
+		domains = append(domains, "network")
+	}
+	if strings.Contains(lower, "worker_connections") || strings.Contains(lower, "502 bad gateway") || strings.Contains(lower, "504 gateway") || strings.Contains(lower, "no healthy upstream") {
+		domains = append(domains, "web_proxy")
+	}
+	if strings.Contains(lower, "max_connections") || strings.Contains(lower, "deadlock found") || strings.Contains(lower, "oom command not allowed") {
+		domains = append(domains, "database")
+	}
+
+	return domains
+}
+
+func matchLogRule(rule *LogRule, processedLogs, tailSnippet string) *LogAnalysisResult {
+	if loc := rule.Regex.FindStringSubmatch(processedLogs); len(loc) > 0 {
+		matched := loc[0]
+		detail := matched
+		for k := 1; k < len(loc); k++ {
+			if loc[k] != "" {
+				detail = strings.TrimSpace(loc[k])
+				break
+			}
+		}
+
+		summary := rule.SummaryTpl
+		if strings.Contains(rule.SummaryTpl, "%s") {
+			summary = strings.Replace(rule.SummaryTpl, "%s", truncateString(detail, 80), 1)
+		}
+
+		var errClass string
+		if rule.ExtractClass != nil {
+			errClass = rule.ExtractClass(loc)
+		}
+
+		var errLocation string
+		if rule.ExtractLocation != nil {
+			errLocation = rule.ExtractLocation(processedLogs)
+		}
+
+		var culprit *observerv1alpha1.CulpritCode
+		if rule.ExtractCulprit != nil {
+			culprit = rule.ExtractCulprit(processedLogs)
+		}
+
+		return &LogAnalysisResult{
+			MatchedRule:       rule,
+			MatchedPattern:    rule.Name,
+			Category:          rule.Category,
+			ErrorClass:        errClass,
+			ErrorLocation:     errLocation,
+			CulpritCode:       culprit,
+			Snippet:           tailSnippet,
+			Summary:           summary,
+			RecommendedAction: rule.RecommendedAction,
+		}
+	}
+	return nil
+}
+
+// AnalyzeLogs searches previous container logs for known failure patterns using hierarchical two-tier pre-filtering.
 func AnalyzeLogs(logs string) *LogAnalysisResult {
 	if strings.TrimSpace(logs) == "" {
 		return nil
@@ -1003,48 +1169,28 @@ func AnalyzeLogs(logs string) *LogAnalysisResult {
 	lines := strings.Split(processedLogs, "\n")
 	tailSnippet := extractTailSnippet(lines, 15)
 
-	for _, rule := range logRules {
-		if loc := rule.Regex.FindStringSubmatch(processedLogs); len(loc) > 0 {
-			matched := loc[0]
-			detail := matched
-			for k := 1; k < len(loc); k++ {
-				if loc[k] != "" {
-					detail = strings.TrimSpace(loc[k])
-					break
+	// 2. Hierarchical fast pre-filtering: check candidate domains first
+	detectedDomains := fastDetectDomains(processedLogs)
+	checkedRules := make(map[*LogRule]bool)
+
+	for _, dom := range detectedDomains {
+		if rules, exists := domainRulesIndex[dom]; exists {
+			for _, rule := range rules {
+				checkedRules[rule] = true
+				if res := matchLogRule(rule, processedLogs, tailSnippet); res != nil {
+					return res
 				}
 			}
+		}
+	}
 
-			summary := rule.SummaryTpl
-			if strings.Contains(rule.SummaryTpl, "%s") {
-				summary = strings.Replace(rule.SummaryTpl, "%s", truncateString(detail, 80), 1)
-			}
-
-			var errClass string
-			if rule.ExtractClass != nil {
-				errClass = rule.ExtractClass(loc)
-			}
-
-			var errLocation string
-			if rule.ExtractLocation != nil {
-				errLocation = rule.ExtractLocation(processedLogs)
-			}
-
-			var culprit *observerv1alpha1.CulpritCode
-			if rule.ExtractCulprit != nil {
-				culprit = rule.ExtractCulprit(processedLogs)
-			}
-
-			return &LogAnalysisResult{
-				MatchedRule:       &rule,
-				MatchedPattern:    rule.Name,
-				Category:          rule.Category,
-				ErrorClass:        errClass,
-				ErrorLocation:     errLocation,
-				CulpritCode:       culprit,
-				Snippet:           tailSnippet,
-				Summary:           summary,
-				RecommendedAction: rule.RecommendedAction,
-			}
+	// 3. Fallback scan: check remaining rules
+	for _, rule := range allIndexedRules {
+		if checkedRules[rule] {
+			continue
+		}
+		if res := matchLogRule(rule, processedLogs, tailSnippet); res != nil {
+			return res
 		}
 	}
 
@@ -1143,8 +1289,12 @@ func extractPythonCulprit(logs string) *observerv1alpha1.CulpritCode {
 	for i := len(matches) - 1; i >= 0; i-- {
 		m := matches[i]
 		filePath := m[1]
-		// Skip python internal site-packages if possible
-		if strings.Contains(filePath, "site-packages") || strings.Contains(filePath, "lib/python") {
+		// Skip python internal standard library and virtualenvs
+		if strings.Contains(filePath, "site-packages") ||
+			strings.Contains(filePath, "lib/python") ||
+			strings.Contains(filePath, ".venv") ||
+			strings.Contains(filePath, "virtualenv") ||
+			strings.Contains(filePath, "venv/") {
 			continue
 		}
 		lineNum, _ := strconv.Atoi(m[2])
@@ -1181,16 +1331,22 @@ func extractJavaCulprit(logs string) *observerv1alpha1.CulpritCode {
 	if len(matches) == 0 {
 		return nil
 	}
-	// Walk through stack to find user code (ignoring Spring/JDK internal calls)
+	// Walk through stack to find user code (ignoring Spring/JDK/logging internal calls)
 	for _, m := range matches {
 		fullPkg := m[1]
 		fileName := m[2]
 		lineStr := m[3]
 		if strings.HasPrefix(fullPkg, "org.springframework.") ||
 			strings.HasPrefix(fullPkg, "java.") ||
+			strings.HasPrefix(fullPkg, "javax.") ||
+			strings.HasPrefix(fullPkg, "jakarta.") ||
 			strings.HasPrefix(fullPkg, "sun.") ||
 			strings.HasPrefix(fullPkg, "jdk.") ||
-			strings.HasPrefix(fullPkg, "org.apache.") {
+			strings.HasPrefix(fullPkg, "org.apache.") ||
+			strings.HasPrefix(fullPkg, "com.zaxxer.") ||
+			strings.HasPrefix(fullPkg, "io.netty.") ||
+			strings.HasPrefix(fullPkg, "ch.qos.logback.") ||
+			strings.HasPrefix(fullPkg, "org.slf4j.") {
 			continue
 		}
 		lineNum, _ := strconv.Atoi(lineStr)
@@ -1229,7 +1385,7 @@ func extractNodeCulprit(logs string) *observerv1alpha1.CulpritCode {
 	}
 	for _, m := range matches {
 		filePath := m[1]
-		if strings.Contains(filePath, "node_modules") {
+		if strings.Contains(filePath, "node_modules") || strings.Contains(filePath, "node:internal") {
 			continue
 		}
 		lineNum, _ := strconv.Atoi(m[2])
@@ -1237,6 +1393,36 @@ func extractNodeCulprit(logs string) *observerv1alpha1.CulpritCode {
 		return &observerv1alpha1.CulpritCode{
 			Language: "JavaScript/TypeScript",
 			File:     parts[len(parts)-1],
+			Line:     lineNum,
+		}
+	}
+	return nil
+}
+
+var cppLocRegex = regexp.MustCompile(`(?:(?:\.\/|[a-zA-Z0-9_\-\.\/]+)\/)?([a-zA-Z0-9_\-\.]+\.(?:cpp|c|cc|cxx|h|hpp)):(\d+)`)
+
+func extractCppLocation(logs string) string {
+	matches := cppLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) > 0 {
+		return matches[0][1] + ":" + matches[0][2]
+	}
+	return ""
+}
+
+func extractCppCulprit(logs string) *observerv1alpha1.CulpritCode {
+	matches := cppLocRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	for _, m := range matches {
+		file := m[1]
+		if strings.HasPrefix(file, "libc.") || strings.HasPrefix(file, "libstdc++") {
+			continue
+		}
+		lineNum, _ := strconv.Atoi(m[2])
+		return &observerv1alpha1.CulpritCode{
+			Language: "C/C++",
+			File:     file,
 			Line:     lineNum,
 		}
 	}

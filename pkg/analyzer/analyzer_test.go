@@ -674,3 +674,62 @@ func TestDiagnose_BusError(t *testing.T) {
 	}
 }
 
+func TestDiagnose_GlibcHeapCorruption(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(134)
+	logs := `*** Error in '/app/server': double free or corruption (out): 0x0000000001f3b200 ***
+./src/native_calc.cpp:45 in calculate()`
+
+	input := DiagnosticInput{
+		ContainerName: "native-worker",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "native-worker",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "HeapCorruption" {
+		t.Fatalf("expected HeapCorruption, got %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "GlibcHeapCorruption" {
+		t.Fatalf("expected GlibcHeapCorruption, got %s", ev.ErrorClass)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "native_calc.cpp" || ev.CulpritCode.Line != 45 {
+		t.Fatalf("expected culprit native_calc.cpp:45, got %+v", ev.CulpritCode)
+	}
+}
+
+func TestDiagnose_ReadOnlyFilesystem(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+	logs := `2026/11/02 00:00:01 open /tmp/cache.db: read-only file system`
+
+	input := DiagnosticInput{
+		ContainerName: "app",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "app",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "ReadOnlyFilesystemError" {
+		t.Fatalf("expected ReadOnlyFilesystemError, got %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "EROFS" {
+		t.Fatalf("expected EROFS, got %s", ev.ErrorClass)
+	}
+}
+
+
