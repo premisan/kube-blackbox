@@ -400,6 +400,104 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 			steps = append(steps, "Argo CD가 다수의 애플리케이션 저장소를 주기적으로 폴링(Polling)함")
 			steps = append(steps, "원격 Git 호스팅(GitHub/GitLab) API 속도 제한 쿼터(Rate Limit)가 고갈됨")
 			steps = append(steps, "원격 저장소 접근이 HTTP 403/429 오류로 차단되어 지속적 배포 동기화가 중단됨")
+		case "GCPAuthDefaultCredentialsMissing":
+			steps = append(steps, "Google Cloud 클라이언트 SDK가 초기화되며 자격 증명(ADC) 조회를 시작함")
+			steps = append(steps, "GOOGLE_APPLICATION_CREDENTIALS 환경변수 미지정 및 메타데이터 서버 자격 증명 조회 실패")
+			steps = append(steps, fmt.Sprintf("DefaultCredentialsError 예외 발생으로 프로세스가 기동 실패함 (Exit code %s)", exitCodeStr))
+		case "GCPGeminiQuotaExceeded":
+			steps = append(steps, "애플리케이션이 Google Gemini API로 생성(generateContent) 요청을 전송함")
+			steps = append(steps, "프로젝트 분당 토큰/요청 한도(TPM/RPM) 초과로 HTTP 429 ResourceExhausted 수신")
+			steps = append(steps, "클라이언트 재시도 한도 초과 또는 미처리 APIError로 프로세스가 중단됨")
+		case "GCPGeminiSafetyBlocked":
+			steps = append(steps, "Google Gemini 모델이 프롬프트 또는 생성 후보군을 분석함")
+			steps = append(steps, "유해성 평가(Hate Speech, Harassment 등) 점수가 safetySettings 임계치를 초과함")
+			steps = append(steps, "finish_reason: SAFETY로 응답 생성이 차단되고 빈 콘텐츠 반환 또는 예외 발생")
+		case "GCPBigQueryQuotaExceeded":
+			steps = append(steps, "애플리케이션이 대용량 BigQuery 분석 쿼리를 실행함")
+			steps = append(steps, "쿼리가 스캔한 데이터양이 'maximum_bytes_billed' 한도를 초과함")
+			steps = append(steps, "BigQuery API가 400 Query exceeded limit 오류를 반환하며 쿼리 작업 실패")
+		case "GCPStorageAccessDenied":
+			steps = append(steps, "Google Cloud Storage 버킷 또는 객체 읽기/쓰기 API 호출 발생")
+			steps = append(steps, "요청한 서비스 어카운트에 'storage.objects.get/create' IAM 권한 부재")
+			steps = append(steps, "GCS API가 403 Forbidden을 반환하며 파일 I/O 실패")
+		case "ClickHouseTooManyParts":
+			steps = append(steps, "ClickHouse 테이블로 고빈도 소규모 데이터 INSERT가 지속 인입됨")
+			steps = append(steps, "백그라운드 파트 머지(Merge) 속도가 삽입 속도를 따라가지 못해 파트 수가 300개를 초과함")
+			steps = append(steps, "ClickHouse 엔진이 데이터 무결성 보호를 위해 'Too many parts' 예외를 던지고 쓰기를 차단함")
+		case "ClickHouseMemoryLimit":
+			steps = append(steps, "대규모 집계 또는 복잡한 JOIN 쿼리가 실행되며 RAM 사용량이 급증함")
+			steps = append(steps, "설정된 'max_server_memory_usage' 또는 쿼리 메모리 한도에 도달함")
+			steps = append(steps, "ClickHouse 메모리 트래커가 쿼리를 강제 중단하거나 프로세스를 보호함")
+		case "ClickHouseZooKeeperSessionLost":
+			steps = append(steps, "ClickHouse 복제 테이블이 ZooKeeper 앙상블과 하트비트를 유지함")
+			steps = append(steps, "네트워크 레이턴시 또는 ZK 부하로 인해 세션 타임아웃(Session expired) 발생")
+			steps = append(steps, "복제본 동기화가 중단되고 테이블이 일시적 Readonly 모드로 격리됨")
+		case "ZooKeeperDiskFull":
+			steps = append(steps, "ZooKeeper 트랜잭션 커밋 로그 및 스냅샷 파일이 지속적으로 생성됨")
+			steps = append(steps, "dataDir 또는 dataLogDir 스토리지 볼륨이 100% 가득 참 (ENOSPC)")
+			steps = append(steps, fmt.Sprintf("디스크 쓰기 실패(IOException: No space left on device)로 ZooKeeper 데몬이 중단됨 (Exit code %s)", exitCodeStr))
+		case "ZooKeeperQuorumLost":
+			steps = append(steps, "ZooKeeper 노드 장애 또는 파티션으로 통신 가능한 활성 노드 수 감소")
+			steps = append(steps, "클러스터 리더 선출 불가능 및 과반수(Quorum) 정족수 미달 상태 진입")
+			steps = append(steps, "앙상블이 모든 클라이언트 요청 처리를 중단하고 동기화 대기에 돌입함")
+		case "ValkeyOOM":
+			steps = append(steps, "Valkey 인메모리 키/값 데이터 사용량이 'maxmemory' 설정에 도달함")
+			steps = append(steps, "키 제거(eviction) 정책으로 신규 메모리를 확보하지 못함")
+			steps = append(steps, "신규 쓰기 명령이 'OOM command not allowed' 오류로 거부됨")
+		case "PostgresTxidExhaustion":
+			steps = append(steps, "PostgreSQL 장시간 트랜잭션 또는 autovacuum 지연으로 TXID가 20억 개 이상 누적됨")
+			steps = append(steps, "트랜잭션 ID 래핑(Wraparound)으로 인한 영구적 데이터 손실 위험 감지")
+			steps = append(steps, "PostgreSQL 엔진이 비상 안전 모드로 진입하여 모든 쓰기 트랜잭션을 전면 거부함")
+		case "JenkinsDiskSpaceExhausted":
+			steps = append(steps, "Jenkins 노드에서 빌드 아티팩트 및 도커 캐시가 지속 누적됨")
+			steps = append(steps, "워크스페이스 여유 디스크가 시스템 임계치(1.0 GiB) 미만으로 하락")
+			steps = append(steps, "Jenkins 마스터가 안전을 위해 해당 에이전트의 빌드 스케줄링을 일시 중단함")
+		case "ArgoWorkflowDeadlineExceeded":
+			steps = append(steps, "Argo Workflow 파이프라인 태스크가 실행 중 긴 외부 작업 또는 블로킹 대기 발생")
+			steps = append(steps, "스펙에 지정된 activeDeadlineSeconds 제한 시간을 초과함")
+			steps = append(steps, "workflow-controller가 실행 중인 파드를 종료하고 WorkflowDeadlineExceeded 상태로 마킹함")
+		case "ArgoRolloutAnalysisFailed":
+			steps = append(steps, "Argo Rollouts가 카나리 트래픽 분할 후 AnalysisRun 지표 측정을 실행함")
+			steps = append(steps, "Prometheus 성공률 또는 지연 시간 지표가 failureLimit 임계치를 초과함")
+			steps = append(steps, "Rollout 컨트롤러가 이상을 감지하고 안전을 위해 즉시 이전 안정 버전으로 자동 롤백함")
+		case "KyvernoAdmissionPolicyViolation":
+			steps = append(steps, "쿠버네티스 API 서버가 리소스 생성/변경 요청을 수신함")
+			steps = append(steps, "Kyverno 어드미션 웹훅이 ClusterPolicy 유효성 검증(Validation) 규칙을 실행함")
+			steps = append(steps, "보안 규정 위반(루트 권한, CPU Limit 누락 등)으로 요청이 차단됨")
+		case "KyvernoWebhookTimeout":
+			steps = append(steps, "API 서버가 리소스 변형/검증을 위해 Kyverno 웹훅 서비스(9443)를 호출함")
+			steps = append(steps, "Kyverno 파드 과부하 또는 인증서 만료로 context deadline exceeded 발생")
+			steps = append(steps, "웹훅 호출 실패로 인해 클러스터 리소스 배포 파이프라인이 차단됨")
+		case "GatekeeperConstraintViolation":
+			steps = append(steps, "OPA Gatekeeper admission webhook이 리소스 명세를 수신함")
+			steps = append(steps, "Rego 제약 조건(Constraint) 평가 결과 거부(deny) 규칙에 매칭됨")
+			steps = append(steps, "API 서버가 클라이언트에게 403 Forbidden과 함께 제약 위반 에러를 반환함")
+		case "SecretProviderClassNotFound":
+			steps = append(steps, "Kubelet이 Secrets Store CSI 볼륨 마운트 작업을 시작함")
+			steps = append(steps, "해당 네임스페이스에서 지정된 SecretProviderClass CRD 리소스를 찾을 수 없음")
+			steps = append(steps, "MountVolume.SetUp 실패로 파드가 ContainerCreating / CrashLoopBackOff 상태에 빠짐")
+		case "NFSMountAccessDenied":
+			steps = append(steps, "노드가 NFS 서버로 원격 디렉토리 마운트(mount.nfs) 시스템 콜을 실행함")
+			steps = append(steps, "NFS 서버가 클라이언트 IP 또는 no_root_squash 권한 불일치로 접근 거부(Access denied)")
+			steps = append(steps, "볼륨 마운트 실패로 인해 컨테이너 기동이 차단됨")
+		case "NFSConnectionTimeout":
+			steps = append(steps, "노드가 NFS 서버 IP의 2049/111 포트로 TCP 연결을 시도함")
+			steps = append(steps, "방화벽 포트 차단 또는 스토리지 서버 다운으로 Connection timed out 발생")
+			steps = append(steps, "Kubelet의 볼륨 마운트가 타임아웃되며 파드 생성이 지연됨")
+		case "MetricsServerKubeletScrapeFailed":
+			steps = append(steps, "metrics-server가 워커 노드의 Kubelet(10250) 메트릭 엔드포인트 수집을 시도함")
+			steps = append(steps, "Kubelet 자체 서명 인증서 불일치 또는 10250 포트 네트워크 차단 발생")
+			steps = append(steps, "노드/파드 리소스 메트릭 수집 불가로 HPA 오토스케일링 기능이 중단됨")
+		case "LiteLLMRateLimitExceeded":
+			steps = append(steps, "클라이언트 애플리케이션이 LiteLLM 프록시로 LLM 생성 쿼리를 전송함")
+			steps = append(steps, "업스트림 LLM 프로바이더(OpenAI/Anthropic/Gemini)의 TPM/RPM 한도에 도달함")
+			steps = append(steps, "LiteLLM이 클라이언트에게 429 Too Many Requests (RateLimitError)를 반환함")
+		case "LiteLLMBudgetExceeded":
+			steps = append(steps, "LiteLLM 프록시가 가상 키의 누적 비용/토큰 사용량을 검증함")
+			steps = append(steps, "설정된 'max_budget' 한도를 초과하여 신규 요청이 차단됨 (BudgetExceededError)")
+		case "LiteLLMContextWindowExceeded":
+			steps = append(steps, "입력 프롬프트와 요청 토큰 수가 모델의 최대 허용 컨텍스트 길이를 초과함")
+			steps = append(steps, "LiteLLM이 ContextWindowExceededError를 발생시키며 쿼리 실행을 거부함")
 		default:
 			steps = append(steps, fmt.Sprintf("컨테이너 상태 이상이 감지됨 (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -642,6 +740,104 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 			steps = append(steps, "Argo CD polled multiple repositories frequently")
 			steps = append(steps, "Remote Git host (GitHub/GitLab) API rate limit quota exhausted")
 			steps = append(steps, "Remote repo access blocked by HTTP 403/429")
+		case "GCPAuthDefaultCredentialsMissing":
+			steps = append(steps, "Google Cloud client SDK initialized and attempted ADC lookup")
+			steps = append(steps, "GOOGLE_APPLICATION_CREDENTIALS not set and metadata server lookup failed")
+			steps = append(steps, fmt.Sprintf("DefaultCredentialsError aborted application startup (Exit code %s)", exitCodeStr))
+		case "GCPGeminiQuotaExceeded":
+			steps = append(steps, "Application dispatched generateContent request to Google Gemini API")
+			steps = append(steps, "Project rate limit (TPM/RPM) exceeded, returning HTTP 429 ResourceExhausted")
+			steps = append(steps, "Process terminated due to unhandled APIError or retry limit reached")
+		case "GCPGeminiSafetyBlocked":
+			steps = append(steps, "Google Gemini model evaluated prompt and response candidates")
+			steps = append(steps, "Safety ratings exceeded safetySettings policy threshold")
+			steps = append(steps, "Candidate blocked with finish_reason: SAFETY")
+		case "GCPBigQueryQuotaExceeded":
+			steps = append(steps, "Application submitted large BigQuery analytical query")
+			steps = append(steps, "Query bytes scanned exceeded maximum_bytes_billed limit")
+			steps = append(steps, "BigQuery API returned 400 Query exceeded limit error")
+		case "GCPStorageAccessDenied":
+			steps = append(steps, "Storage API request issued against Google Cloud Storage bucket/object")
+			steps = append(steps, "Service account lacked storage.objects.get/create IAM permissions")
+			steps = append(steps, "GCS API returned 403 Forbidden")
+		case "ClickHouseTooManyParts":
+			steps = append(steps, "High frequency small INSERT batches executed against ClickHouse table")
+			steps = append(steps, "Background partition merges lagged behind write rate; parts exceeded threshold (300+)")
+			steps = append(steps, "ClickHouse threw 'Too many parts' exception to prevent server degradation")
+		case "ClickHouseMemoryLimit":
+			steps = append(steps, "Large aggregation or complex JOIN query consumed excessive memory")
+			steps = append(steps, "Configured max_server_memory_usage or query memory limit reached")
+			steps = append(steps, "Memory tracker aborted query execution to safeguard node")
+		case "ClickHouseZooKeeperSessionLost":
+			steps = append(steps, "Replicated ClickHouse table lost heartbeat with ZooKeeper ensemble")
+			steps = append(steps, "Session expired due to network latency or ZooKeeper pause")
+			steps = append(steps, "Table isolated in read-only mode to prevent split-brain")
+		case "ZooKeeperDiskFull":
+			steps = append(steps, "ZooKeeper transaction commit logs and snapshot files accumulated")
+			steps = append(steps, "dataDir or dataLogDir storage volume reached 100% capacity (ENOSPC)")
+			steps = append(steps, fmt.Sprintf("ZooKeeper server halted with IOException: No space left on device (Exit code %s)", exitCodeStr))
+		case "ZooKeeperQuorumLost":
+			steps = append(steps, "ZooKeeper nodes failed or network partition isolated instances")
+			steps = append(steps, "Ensemble lost majority quorum (N/2 + 1) for leader election")
+			steps = append(steps, "ZooKeeper halted client request processing")
+		case "ValkeyOOM":
+			steps = append(steps, "Valkey in-memory storage consumption reached maxmemory limit")
+			steps = append(steps, "Eviction policy failed to reclaim sufficient memory")
+			steps = append(steps, "Write commands rejected with 'OOM command not allowed'")
+		case "PostgresTxidExhaustion":
+			steps = append(steps, "PostgreSQL transaction ID generation exceeded 2 billion without freeze")
+			steps = append(steps, "Wraparound data loss prevention safety triggered")
+			steps = append(steps, "PostgreSQL refused all write transactions and entered emergency read-only mode")
+		case "JenkinsDiskSpaceExhausted":
+			steps = append(steps, "Build artifacts and Docker layer caches accumulated on Jenkins node")
+			steps = append(steps, "Available disk space fell below threshold (1.0 GiB)")
+			steps = append(steps, "Jenkins controller disabled executor to avoid catastrophic disk full")
+		case "ArgoWorkflowDeadlineExceeded":
+			steps = append(steps, "Argo Workflow task encountered slow processing or blocking I/O")
+			steps = append(steps, "activeDeadlineSeconds threshold elapsed")
+			steps = append(steps, "workflow-controller terminated pod with WorkflowDeadlineExceeded")
+		case "ArgoRolloutAnalysisFailed":
+			steps = append(steps, "Argo Rollouts measured AnalysisRun metrics during canary step")
+			steps = append(steps, "Prometheus metric failure threshold reached")
+			steps = append(steps, "Rollout controller aborted rollout and initiated automated rollback")
+		case "KyvernoAdmissionPolicyViolation":
+			steps = append(steps, "Kubernetes API server received pod creation/mutation request")
+			steps = append(steps, "Kyverno admission webhook evaluated ClusterPolicy rules")
+			steps = append(steps, "Validation check failed, denying resource admission")
+		case "KyvernoWebhookTimeout":
+			steps = append(steps, "API server dispatched webhook call to Kyverno controller on port 9443")
+			steps = append(steps, "Controller overloaded or TLS cert expired, resulting in context deadline exceeded")
+			steps = append(steps, "Webhook failure policy blocked pod deployment")
+		case "GatekeeperConstraintViolation":
+			steps = append(steps, "OPA Gatekeeper admission webhook evaluated resource spec against Rego constraints")
+			steps = append(steps, "Constraint violation triggered deny rule")
+			steps = append(steps, "API server rejected operation with 403 Forbidden")
+		case "SecretProviderClassNotFound":
+			steps = append(steps, "Kubelet initiated Secrets Store CSI volume setup")
+			steps = append(steps, "SecretProviderClass resource not found in pod namespace")
+			steps = append(steps, "MountVolume.SetUp failed, placing pod in ContainerCreating / CrashLoopBackOff")
+		case "NFSMountAccessDenied":
+			steps = append(steps, "Node attempted NFS remote directory mount (mount.nfs)")
+			steps = append(steps, "NFS server rejected client IP or root UID mapping")
+			steps = append(steps, "Mount failure blocked container startup")
+		case "NFSConnectionTimeout":
+			steps = append(steps, "Node attempted TCP handshake to NFS server on port 2049/111")
+			steps = append(steps, "Connection timed out due to firewall or server outage")
+			steps = append(steps, "Volume mount timeout stalled pod initialization")
+		case "MetricsServerKubeletScrapeFailed":
+			steps = append(steps, "metrics-server attempted metric collection from Kubelet port 10250")
+			steps = append(steps, "Connection timed out or rejected due to self-signed certificate SAN mismatch")
+			steps = append(steps, "HPA autoscaling stalled due to missing metrics")
+		case "LiteLLMRateLimitExceeded":
+			steps = append(steps, "Client request forwarded through LiteLLM proxy to upstream LLM")
+			steps = append(steps, "Upstream provider rate limit reached (HTTP 429 TPM/RPM)")
+			steps = append(steps, "LiteLLM raised RateLimitError to client")
+		case "LiteLLMBudgetExceeded":
+			steps = append(steps, "LiteLLM proxy validated virtual key cumulative spend")
+			steps = append(steps, "max_budget ceiling reached; further queries rejected with BudgetExceededError")
+		case "LiteLLMContextWindowExceeded":
+			steps = append(steps, "Input prompt and requested generation tokens exceeded model capacity")
+			steps = append(steps, "LiteLLM rejected request with ContextWindowExceededError")
 		default:
 			steps = append(steps, fmt.Sprintf("Container termination observed (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -811,6 +1007,56 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 			return "Argo CD repo-server가 대규모 Helm/Kustomize 매니페스트 렌더링 중 메모리 한도를 초과하여 OOMKilled되었습니다."
 		case "GitRateLimitExceeded":
 			return "GitHub/GitLab API 호출 속도 제한(Rate Limit)을 초과하여 Git 원격 저장소 동기화가 실패했습니다."
+		case "GCPAuthDefaultCredentialsMissing":
+			return "Google Cloud SDK의 애플리케이션 기본 자격 증명(ADC) 부재로 클라이언트 초기화에 실패했습니다."
+		case "GCPGeminiQuotaExceeded":
+			return "Google Gemini API 호출 속도 제한(TPM/RPM) 또는 일일 할당량(Quota) 초과로 요청이 거부되었습니다."
+		case "GCPGeminiSafetyBlocked":
+			return "Google Gemini 모델 안전성 필터(Safety Ratings) 정책에 의해 생성 콘텐츠가 차단되었습니다."
+		case "GCPBigQueryQuotaExceeded":
+			return "BigQuery 쿼리 바이트 청구 한도(maximum_bytes_billed) 초과로 분석 쿼리가 중단되었습니다."
+		case "GCPStorageAccessDenied":
+			return "Google Cloud Storage 버킷 또는 객체 접근 IAM 권한이 없어(403 Forbidden) 파일 I/O에 실패했습니다."
+		case "ClickHouseTooManyParts":
+			return "소규모 INSERT 빈발로 ClickHouse 테이블 파트 수가 한도를 초과하여 데이터 보호를 위해 쓰기가 차단되었습니다."
+		case "ClickHouseMemoryLimit":
+			return "ClickHouse 서버 또는 쿼리 메모리 한도(max_server_memory_usage) 초과로 작업이 강제 종료되었습니다."
+		case "ClickHouseZooKeeperSessionLost":
+			return "ClickHouse가 ZooKeeper 분산 코디네이션 세션을 상실하여 테이블이 읽기 전용으로 격리되었습니다."
+		case "ZooKeeperDiskFull":
+			return "ZooKeeper 트랜잭션 로그/스냅샷 디스크 볼륨이 고갈되어 서버 데몬이 비정상 종료되었습니다."
+		case "ZooKeeperQuorumLost":
+			return "ZooKeeper 클러스터가 과반수 쿼럼(Quorum)을 상실하여 리더 선출 및 요청 처리가 마비되었습니다."
+		case "ValkeyOOM":
+			return "Valkey 메모리가 maxmemory 제한에 도달하여 신규 쓰기 명령이 거절되었습니다."
+		case "PostgresTxidExhaustion":
+			return "PostgreSQL 트랜잭션 ID 래핑(TXID Wraparound) 방지 비상 잠금으로 인해 데이터베이스가 읽기 전용화되었습니다."
+		case "JenkinsDiskSpaceExhausted":
+			return "Jenkins 노드의 워크스페이스 저장 공간이 임계치 미만으로 고갈되어 빌드가 중단되었습니다."
+		case "ArgoWorkflowDeadlineExceeded":
+			return "Argo Workflow 파이프라인 태스크가 지정된 activeDeadlineSeconds 실행 시간을 초과했습니다."
+		case "ArgoRolloutAnalysisFailed":
+			return "Argo Rollouts 카나리 배포 분석(AnalysisRun) 지표 측정 실패로 자동 롤백되었습니다."
+		case "KyvernoAdmissionPolicyViolation":
+			return "Kyverno 보안 어드미션 정책(ClusterPolicy) 위반으로 인해 파드 생성이 거절되었습니다."
+		case "KyvernoWebhookTimeout":
+			return "Kyverno 웹훅 컨트롤러 호출 타임아웃 또는 인증서 만료로 리소스 배포가 차단되었습니다."
+		case "GatekeeperConstraintViolation":
+			return "OPA Gatekeeper 제약 조건(Constraint) 위반으로 인해 쿠버네티스 리소스 생성이 거부되었습니다."
+		case "SecretProviderClassNotFound":
+			return "Secrets Store CSI Driver가 참조하는 SecretProviderClass 리소스를 찾을 수 없어 볼륨 마운트에 실패했습니다."
+		case "NFSMountAccessDenied":
+			return "NFS 스토리지 서버의 Export 디렉토리 마운트 권한이 거부(Access denied)되었습니다."
+		case "NFSConnectionTimeout":
+			return "NFS 스토리지 서버(2049 포트) 연결 타임아웃으로 볼륨 마운트가 실패했습니다."
+		case "MetricsServerKubeletScrapeFailed":
+			return "metrics-server가 노드 Kubelet(10250) 메트릭을 스크랩하지 못해 HPA 메트릭 조회가 불가능합니다."
+		case "LiteLLMRateLimitExceeded":
+			return "LiteLLM 프록시 연결 업스트림 LLM 프로바이더의 속도 제한(Rate Limit 429)을 초과했습니다."
+		case "LiteLLMBudgetExceeded":
+			return "LiteLLM 가상 키에 할당된 최대 비용 예산(max_budget) 한도에 도달하여 요청이 차단되었습니다."
+		case "LiteLLMContextWindowExceeded":
+			return "요청 토큰 수가 LLM 모델의 최대 컨텍스트 윈도우 길이를 초과했습니다."
 		default:
 			return fmt.Sprintf("컨테이너가 %s 원인으로 비정상 종료되었습니다%s.", inc.RootCause, culpritStr)
 		}
@@ -920,6 +1166,56 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 		return "Argo CD repo-server exceeded memory limit while rendering large Helm/Kustomize manifests."
 	case "GitRateLimitExceeded":
 		return "Remote Git host (GitHub/GitLab) API rate limit exceeded, halting GitOps synchronization."
+	case "GCPAuthDefaultCredentialsMissing":
+		return "Google Cloud SDK Application Default Credentials (ADC) lookup failed."
+	case "GCPGeminiQuotaExceeded":
+		return "Google Gemini API rate limit or project quota exceeded (HTTP 429 ResourceExhausted)."
+	case "GCPGeminiSafetyBlocked":
+		return "Google Gemini response candidate or prompt blocked by safety filters."
+	case "GCPBigQueryQuotaExceeded":
+		return "BigQuery query exceeded bytes billed limit (maximum_bytes_billed)."
+	case "GCPStorageAccessDenied":
+		return "Google Cloud Storage bucket or object access denied (HTTP 403 Forbidden)."
+	case "ClickHouseTooManyParts":
+		return "ClickHouse table partition parts exceeded threshold due to small frequent inserts."
+	case "ClickHouseMemoryLimit":
+		return "ClickHouse memory limit exceeded for query or server total."
+	case "ClickHouseZooKeeperSessionLost":
+		return "ClickHouse lost ZooKeeper coordination session, halting replicated engine tables."
+	case "ZooKeeperDiskFull":
+		return "ZooKeeper transaction log or snapshot disk space exhausted."
+	case "ZooKeeperQuorumLost":
+		return "ZooKeeper ensemble lost majority quorum (N/2 + 1) for leader election."
+	case "ValkeyOOM":
+		return "Valkey in-memory storage consumption reached maxmemory limit."
+	case "PostgresTxidExhaustion":
+		return "PostgreSQL entered emergency read-only mode to prevent catastrophic TXID wraparound data loss."
+	case "JenkinsDiskSpaceExhausted":
+		return "Jenkins node workspace disk space fell below safety threshold."
+	case "ArgoWorkflowDeadlineExceeded":
+		return "Argo Workflow task exceeded configured activeDeadlineSeconds."
+	case "ArgoRolloutAnalysisFailed":
+		return "Argo Rollouts canary AnalysisRun metrics evaluation failed, triggering automated abort."
+	case "KyvernoAdmissionPolicyViolation":
+		return "Pod admission rejected due to Kyverno ClusterPolicy rule violation."
+	case "KyvernoWebhookTimeout":
+		return "Kyverno admission webhook call timed out or TLS certificate expired."
+	case "GatekeeperConstraintViolation":
+		return "Resource creation rejected by OPA Gatekeeper constraint violation."
+	case "SecretProviderClassNotFound":
+		return "Secrets Store CSI Driver referenced SecretProviderClass resource not found."
+	case "NFSMountAccessDenied":
+		return "NFS server rejected remote directory mount access."
+	case "NFSConnectionTimeout":
+		return "NFS storage server connection timed out on port 2049/111."
+	case "MetricsServerKubeletScrapeFailed":
+		return "metrics-server failed to scrape Kubelet metrics on port 10250."
+	case "LiteLLMRateLimitExceeded":
+		return "LiteLLM upstream LLM provider rate limit exceeded (HTTP 429 TPM/RPM)."
+	case "LiteLLMBudgetExceeded":
+		return "LiteLLM user/key budget limit exceeded; further requests rejected."
+	case "LiteLLMContextWindowExceeded":
+		return "Prompt and generation tokens exceeded LLM model maximum context window length."
 	default:
 		return fmt.Sprintf("Container terminated due to %s%s.", inc.RootCause, culpritStr)
 	}
@@ -1078,6 +1374,56 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 			return "1) argocd-repo-server 디플로이먼트의 memory limit을 최소 2GiB 이상으로 증설하세요:\n```yaml\nresources:\n  limits:\n    memory: 4Gi\n  requests:\n    memory: 1Gi\n```\n2) 환경변수 'ARGOCD_EXEC_TIMEOUT'을 180s로 설정하고 Helm 매니페스트를 분할하세요."
 		case "GitRateLimitExceeded":
 			return "1) Argo CD repo 자격 증명에 GitHub App 또는 충분한 쿼터의 Personal Access Token(PAT)을 등록하세요. 2) 주기적 폴링 대신 Git Webhook 알림 방식으로 전환하세요."
+		case "GCPAuthDefaultCredentialsMissing":
+			return "1) 파드에 서비스 어카운트 키 Secret을 볼륨으로 마운트하고 'GOOGLE_APPLICATION_CREDENTIALS=/etc/gcp/key.json'을 설정하세요. 2) GKE Workload Identity 환경인 경우 Kubernetes ServiceAccount에 'iam.gke.io/gcp-service-account' 어노테이션이 올바른지 점검하세요."
+		case "GCPGeminiQuotaExceeded":
+			return "1) Google Cloud Console의 Vertex AI / Gemini API 할당량(TPM, RPM) 상향을 요청하세요. 2) 애플리케이션에 지수 백오프(Exponential Backoff) 재시도 로직을 적용하거나 LiteLLM 프록시로 트래픽을 분산하세요."
+		case "GCPGeminiSafetyBlocked":
+			return "1) Gemini generationConfig의 safetySettings(HARM_CATEGORY_HARASSMENT 등) 임계값을 BLOCK_ONLY_HIGH로 완화하세요. 2) 사용자 입력 프롬프트 사전 필터링 로직을 보강하세요."
+		case "GCPBigQueryQuotaExceeded":
+			return "1) 쿼리 잡 설정의 'maximum_bytes_billed' 한도를 늘리거나 날짜 파티션/클러스터링 필터를 적용해 스캔 용량을 줄이세요. 2) GCP BigQuery 슬롯 예약(Slot Reservations)을 검토하세요."
+		case "GCPStorageAccessDenied":
+			return "1) 서비스 어카운트에 'roles/storage.objectViewer' 또는 'roles/storage.objectAdmin' IAM 역할을 부여하세요. 2) 버킷의 Uniform Bucket-Level Access 정책을 확인하세요."
+		case "ClickHouseTooManyParts":
+			return "1) 클라이언트에서 10,000건 이상 단위로 벌크(배치) INSERT를 수행하거나 Buffer 엔진 테이블을 도입하세요. 2) clickhouse-server 설정에서 'parts_to_delay_insert'(기본 150) 및 'parts_to_throw_insert'(기본 300) 임계값을 환경에 맞게 조정하세요."
+		case "ClickHouseMemoryLimit":
+			return "1) clickhouse users.xml에서 'max_server_memory_usage' 및 'max_memory_usage' 설정을 확장하세요. 2) 대규모 JOIN/GROUP BY 쿼리에 'max_bytes_before_external_group_by' 디스크 오프로딩을 활성화하세요."
+		case "ClickHouseZooKeeperSessionLost":
+			return "1) ZooKeeper 파드의 가동 상태와 네트워크 레이턴시를 점검하세요. 2) clickhouse-server의 'session_timeout_ms'(기본 30초) 및 'operation_timeout_ms'를 상향 조정하세요."
+		case "ZooKeeperDiskFull":
+			return "1) ZooKeeper PVC 스토리지 용량을 즉시 증설하세요. 2) zoo.cfg에 'autopurge.purgeInterval=1' 및 'autopurge.snapRetainCount=3' 설정을 활성화하여 오래된 스냅샷을 자동 삭제하세요."
+		case "ZooKeeperQuorumLost":
+			return "1) 과반수(N/2 + 1)의 ZooKeeper 노드가 정상 실행 중인지 확인하세요. 2) 노드 간 2888(피어 통신) 및 3888(리더 선출) 포트 방화벽을 점검하세요."
+		case "ValkeyOOM":
+			return "1) valkey.conf에서 'maxmemory' 한도를 증설하거나 파드 메모리 제한을 확장하세요. 2) 'maxmemory-policy allkeys-lru' 등 만료 키 축출 정책을 설정하세요."
+		case "PostgresTxidExhaustion":
+			return "1) 즉시 단일 사용자 모드('postgres --single -D /var/lib/postgresql/data')로 진입하여 'VACUUM FREEZE ANALYZE'를 긴급 수행하세요. 2) 'autovacuum_freeze_max_age' 및 'autovacuum_vacuum_cost_limit'을 튜닝하세요."
+		case "JenkinsDiskSpaceExhausted":
+			return "1) Jenkins 홈/워크스페이스 볼륨 PVC 용량을 확장하세요. 2) 파이프라인 post 블록에 'cleanWs()'를 추가하고 'Discard old builds' 보존 정책을 적용하세요."
+		case "ArgoWorkflowDeadlineExceeded":
+			return "1) Workflow 템플릿의 'activeDeadlineSeconds' 값을 늘려 충분한 실행 시간을 부여하세요. 2) 파이프라인 외부 호출 I/O 병목 및 데이터베이스 락 지연을 점검하세요."
+		case "ArgoRolloutAnalysisFailed":
+			return "1) AnalysisTemplate의 Prometheus 쿼리 성공률(success-rate) 또는 레이턴시 지표 임계값을 점검하세요. 2) 카나리 파드의 로그를 확인하여 신규 버전 결함을 수정하세요."
+		case "KyvernoAdmissionPolicyViolation":
+			return "1) 에러 로그에 명시된 Kyverno 정책 요구사항(보안 컨텍스트, 라벨, 이미지 태그 등)을 파드 스펙에 보강하세요. 2) 'kubectl get cpol -A'로 활성화된 정책을 확인하세요."
+		case "KyvernoWebhookTimeout":
+			return "1) kyverno 파드의 CPU/메모리 부하 및 가동 상태를 점검하세요. 2) API 서버와 kyverno 서비스 간 9443 포트 방화벽 및 Webhook TLS Secret 갱신 상태를 확인하세요."
+		case "GatekeeperConstraintViolation":
+			return "1) Gatekeeper 제약 조건 위반 항목(privileged 컨테이너, CPU/메모리 제한 누락 등)을 매니페스트에 보강하세요. 2) 'kubectl get constraints'로 위반 상태를 조회하세요."
+		case "SecretProviderClassNotFound":
+			return "1) 파드와 동일한 네임스페이스에 SecretProviderClass 리소스가 생성되어 있는지 확인하세요 ('kubectl get secretproviderclass -n <ns>'). 2) 볼륨 spec의 secretProviderClass 이름 오탈자를 수정하세요."
+		case "NFSMountAccessDenied":
+			return "1) NFS 서버의 '/etc/exports' 설정에서 클러스터 워커 노드 CIDR 대역 허용 및 'no_root_squash' 옵션을 확인하세요. 2) NFS 서버에서 'exportfs -rav'를 실행하여 설정을 갱신하세요."
+		case "NFSConnectionTimeout":
+			return "1) NFS 서버 호스트의 가동 상태를 점검하세요. 2) 워커 노드와 NFS 서버 간 방화벽에서 TCP/UDP 2049(NFS) 및 111(rpcbind) 포트가 허용되었는지 확인하세요."
+		case "MetricsServerKubeletScrapeFailed":
+			return "1) Kubelet 자체 서명 인증서 사용 환경인 경우 metrics-server 디플로이먼트 인수에 '--kubelet-insecure-tls'를 추가하세요. 2) 제어 평면과 워커 노드 간 10250 포트 방화벽을 허용하세요."
+		case "LiteLLMRateLimitExceeded":
+			return "1) LiteLLM config.yaml에 모델 폴백(fallback) 라우팅을 구성하세요. 2) 클라이언트에 지수 백오프(Exponential Backoff) 재시도를 적용하거나 Redis/Valkey 캐싱을 활성화하세요."
+		case "LiteLLMBudgetExceeded":
+			return "1) LiteLLM 관리자 UI 또는 API에서 해당 사용자/키의 'max_budget' 한도를 증설하거나 리셋하세요. 2) 월간 예산 리셋 주기를 확인하세요."
+		case "LiteLLMContextWindowExceeded":
+			return "1) 대화 히스토리 슬라이딩 윈도우 또는 텍스트 요약을 적용하여 프롬프트를 압축하세요. 2) 더 큰 컨텍스트 윈도우를 지원하는 모델(Gemini 1.5, Claude 3.5 등)로 전환하세요."
 		default:
 			return "직전 컨테이너 로그 및 종료 코드를 확인하여 애플리케이션 설정 및 파드 리소스 사양을 점검하세요."
 		}
@@ -1186,6 +1532,56 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 		return "1) Increase memory limit on argocd-repo-server (recommend >= 2GiB-4GiB). 2) Set ARGOCD_EXEC_TIMEOUT and decompose large charts."
 	case "GitRateLimitExceeded":
 		return "1) Configure GitHub App or Personal Access Token (PAT) with higher API quotas in Argo CD repository credentials. 2) Switch to webhook notifications instead of polling."
+	case "GCPAuthDefaultCredentialsMissing":
+		return "1) Mount a GCP service account JSON key and set GOOGLE_APPLICATION_CREDENTIALS. 2) For GKE Workload Identity, verify the ServiceAccount annotation 'iam.gke.io/gcp-service-account'."
+	case "GCPGeminiQuotaExceeded":
+		return "1) Request a quota increase for Gemini API (TPM, RPM) in Google Cloud Console. 2) Implement exponential backoff retry logic or route requests through LiteLLM."
+	case "GCPGeminiSafetyBlocked":
+		return "1) Adjust Gemini safetySettings thresholds (e.g. BLOCK_ONLY_HIGH). 2) Sanitize and filter prompt inputs."
+	case "GCPBigQueryQuotaExceeded":
+		return "1) Increase 'maximum_bytes_billed' in query configuration or optimize query with partition/cluster filters. 2) Inspect BigQuery slot reservations."
+	case "GCPStorageAccessDenied":
+		return "1) Grant 'roles/storage.objectViewer' or 'roles/storage.objectAdmin' to the service account. 2) Verify bucket Uniform Bucket-Level Access."
+	case "ClickHouseTooManyParts":
+		return "1) Batch inserts into larger chunks (10,000+ rows) or adopt the Buffer table engine. 2) Tune parts_to_throw_insert in ClickHouse merge tree settings."
+	case "ClickHouseMemoryLimit":
+		return "1) Increase max_server_memory_usage in ClickHouse users.xml and increase pod memory. 2) Enable 'max_bytes_before_external_group_by' for spill-to-disk queries."
+	case "ClickHouseZooKeeperSessionLost":
+		return "1) Check ZooKeeper cluster status and network latency. 2) Increase session_timeout_ms in ClickHouse zookeeper configuration."
+	case "ZooKeeperDiskFull":
+		return "1) Expand ZooKeeper storage volume PVC. 2) Enable automatic purge with autopurge.purgeInterval=1 and autopurge.snapRetainCount=3 in zoo.cfg."
+	case "ZooKeeperQuorumLost":
+		return "1) Ensure a majority (N/2 + 1) of ZooKeeper nodes are healthy. 2) Verify ports 2888 (peer) and 3888 (leader election) are reachable."
+	case "ValkeyOOM":
+		return "1) Increase 'maxmemory' in valkey.conf or increase pod memory limit. 2) Configure eviction policy (e.g. maxmemory-policy allkeys-lru)."
+	case "PostgresTxidExhaustion":
+		return "1) Enter single-user mode immediately ('postgres --single') and run 'VACUUM FREEZE ANALYZE'. 2) Tune autovacuum_freeze_max_age."
+	case "JenkinsDiskSpaceExhausted":
+		return "1) Expand Jenkins home/workspace PVC volume. 2) Add 'cleanWs()' in pipeline post-actions or prune old build histories."
+	case "ArgoWorkflowDeadlineExceeded":
+		return "1) Increase 'activeDeadlineSeconds' in the workflow template. 2) Profile task execution for slow I/O or deadlocks."
+	case "ArgoRolloutAnalysisFailed":
+		return "1) Inspect Prometheus queries in the AnalysisTemplate. 2) Review recent application error logs from canary pods to fix bugs."
+	case "KyvernoAdmissionPolicyViolation":
+		return "1) Update pod spec to satisfy the violated Kyverno ClusterPolicy (e.g. securityContext, image tags). 2) Run 'kubectl get cpol' to inspect active policies."
+	case "KyvernoWebhookTimeout":
+		return "1) Check kyverno controller pod resource usage and health. 2) Verify port 9443 connectivity and webhook TLS secret validity."
+	case "GatekeeperConstraintViolation":
+		return "1) Update resource manifest to comply with the Gatekeeper constraint rules. 2) Run 'kubectl get constraints' to view violations."
+	case "SecretProviderClassNotFound":
+		return "1) Ensure SecretProviderClass exists in the same namespace as the pod. 2) Check secretProviderClass name spelling in volume spec."
+	case "NFSMountAccessDenied":
+		return "1) Check '/etc/exports' on NFS server for worker node CIDR and 'no_root_squash'. 2) Reload exports with 'exportfs -rav'."
+	case "NFSConnectionTimeout":
+		return "1) Verify NFS server host is running. 2) Ensure firewall permits TCP/UDP ports 2049 (NFS) and 111 (rpcbind)."
+	case "MetricsServerKubeletScrapeFailed":
+		return "1) Add '--kubelet-insecure-tls' to metrics-server container args for self-signed Kubelet certificates. 2) Open port 10250 between control plane and worker nodes."
+	case "LiteLLMRateLimitExceeded":
+		return "1) Configure model fallbacks in LiteLLM config.yaml. 2) Enable Redis/Valkey response caching in LiteLLM to reduce upstream load."
+	case "LiteLLMBudgetExceeded":
+		return "1) Increase or reset 'max_budget' for the user/key via LiteLLM Admin API or UI. 2) Verify budget reset duration settings."
+	case "LiteLLMContextWindowExceeded":
+		return "1) Truncate or summarize prompt history to fit within the context window. 2) Switch to a larger context window model."
 	default:
 		return "Inspect previous container logs and verify pod resource limits and application configurations."
 	}

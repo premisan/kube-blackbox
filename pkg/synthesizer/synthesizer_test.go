@@ -338,5 +338,64 @@ func TestSynthesizer_EnterpriseCoreDNSLoop(t *testing.T) {
 	}
 }
 
+func TestSynthesizer_GCPGeminiQuota(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "ai-chatbot-123",
+		ContainerName: "chatbot",
+		ExitCode:      &exitCode,
+		RootCause:     "GCPGeminiQuotaExceeded",
+		Category:      "Dependency",
+		Confidence:    "High",
+		ErrorClass:    "Gemini_ResourceExhausted_429",
+		Language:      "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 steps, got %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.SuggestedFix, "할당량") {
+		t.Fatalf("expected fix to mention 할당량, got: %s", result.SuggestedFix)
+	}
+	if !strings.Contains(result.InferredContext, "속도 제한") {
+		t.Fatalf("expected context to mention 속도 제한, got: %s", result.InferredContext)
+	}
+}
+
+func TestSynthesizer_ClickHouseParts(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "analytics",
+		PodName:       "clickhouse-0",
+		ContainerName: "clickhouse",
+		ExitCode:      &exitCode,
+		RootCause:     "ClickHouseTooManyParts",
+		Category:      "Application",
+		Confidence:    "High",
+		ErrorClass:    "ClickHouse_TooManyParts",
+		Language:      "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 steps, got %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.SuggestedFix, "parts_to_delay_insert") {
+		t.Fatalf("expected fix to mention parts_to_delay_insert, got: %s", result.SuggestedFix)
+	}
+}
+
 
 

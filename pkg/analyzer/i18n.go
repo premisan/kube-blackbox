@@ -520,6 +520,194 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "GitHub/GitLab 원격 저장소 API 호출 속도 제한(Rate Limit)을 초과했습니다.",
 			RecommendedAction: "Argo CD 설정에 Personal Access Token(PAT) 또는 GitHub App 자격 증명을 등록하여 API 쿼터 한도를 확장하세요.",
 		},
+		"GCPAuthDefaultCredentialsMissing": {
+			SummaryTpl:        "Google Cloud SDK 애플리케이션 기본 자격 증명(ADC) 부재 또는 메타데이터 서버 연결 실패.",
+			RecommendedAction: "GOOGLE_APPLICATION_CREDENTIALS 환경변수를 설정하거나 GKE Workload Identity 서비스어카운트 어노테이션을 확인하세요.",
+		},
+		"GCPGeminiQuotaExceeded": {
+			SummaryTpl:        "Google Gemini API 호출 속도 제한(TPM/RPM) 또는 할당량 초과 (HTTP 429 ResourceExhausted).",
+			RecommendedAction: "Google Cloud Console에서 Gemini API 할당량 증설을 요청하거나 지수 백오프 재시도 로직을 적용하세요.",
+		},
+		"GCPGeminiSafetyBlocked": {
+			SummaryTpl:        "Google Gemini 모델 안전성 필터(Safety Ratings)에 의해 콘텐츠 생성이 차단되었습니다.",
+			RecommendedAction: "safetySettings 임계값을 BLOCK_ONLY_HIGH로 완화하거나 프롬프트 입력을 정제하세요.",
+		},
+		"GCPGeminiAuthFailed": {
+			SummaryTpl:        "Google Gemini API Key가 유효하지 않거나 인증 실패 (HTTP 401/400).",
+			RecommendedAction: "GEMINI_API_KEY 환경변수 및 Google AI Studio/GCP Console API 키 활성화 상태를 점검하세요.",
+		},
+		"GCPBigQueryQuotaExceeded": {
+			SummaryTpl:        "BigQuery 쿼리 바이트 청구 한도(bytes billed) 초과 또는 동시 쿼리 API 쿼터 도달.",
+			RecommendedAction: "쿼리 maximum_bytes_billed 설정을 증설하거나 파티션/클러스터링 필터를 적용해 스캔 용량을 줄이세요.",
+		},
+		"GCPBigQueryQueryFailed": {
+			SummaryTpl:        "BigQuery 데이터세트/테이블 접근 권한 부재(403) 또는 대상 테이블 부재(404).",
+			RecommendedAction: "서비스 어카운트에 'roles/bigquery.dataViewer' 및 'roles/bigquery.jobUser' 권한을 부여하세요.",
+		},
+		"GCPStorageChecksumMismatch": {
+			SummaryTpl:        "Google Cloud Storage 업로드/다운로드 중 데이터 무결성 체크섬(CRC32c/MD5) 불일치.",
+			RecommendedAction: "네트워크 프록시 및 MTU 단편화 패킷 손상 여부를 확인하고 멀티파트 청크 크기를 조정하세요.",
+		},
+		"GCPStorageAccessDenied": {
+			SummaryTpl:        "Google Cloud Storage 버킷/객체 접근 권한 거절 (HTTP 403 Forbidden).",
+			RecommendedAction: "서비스 어카운트에 'roles/storage.objectViewer' 또는 'roles/storage.objectAdmin' 역할을 부여하세요.",
+		},
+		"ClickHouseTooManyParts": {
+			SummaryTpl:        "ClickHouse 테이블 데이터 파트(parts) 수 한도 초과 (소규모 INSERT 과다로 인한 머지 지연).",
+			RecommendedAction: "클라이언트에서 10,000건 이상 단위로 벌크(배치) INSERT를 수행하거나 Buffer 엔진 테이블을 사용하세요.",
+		},
+		"ClickHouseMemoryLimit": {
+			SummaryTpl:        "ClickHouse 서버 또는 쿼리 메모리 한도(max_server_memory_usage) 초과.",
+			RecommendedAction: "max_server_memory_usage 및 파드 메모리를 증설하고 'max_bytes_before_external_group_by' 디스크 오프로딩을 설정하세요.",
+		},
+		"ClickHouseZooKeeperSessionLost": {
+			SummaryTpl:        "ClickHouse가 ZooKeeper 클러스터와의 세션 하트비트를 상실하여 복제본이 중단됨.",
+			RecommendedAction: "ZooKeeper 파드 가동 상태를 점검하고 clickhouse 설정의 'session_timeout_ms'를 상향 조정하세요.",
+		},
+		"ClickHouseReadOnlyReplica": {
+			SummaryTpl:        "ClickHouse 복제본 메타데이터 동기화 실패로 테이블이 읽기 전용(Readonly) 모드로 전환됨.",
+			RecommendedAction: "'SYSTEM RESTART REPLICA <table_name>'을 실행하여 복제 세션을 재초기화하세요.",
+		},
+		"ZooKeeperDiskFull": {
+			SummaryTpl:        "ZooKeeper 트랜잭션 로그(dataLogDir) 또는 스냅샷(dataDir) 디스크 공간 고갈.",
+			RecommendedAction: "스토리지 PVC 볼륨 용량을 증설하고 'autopurge.purgeInterval=1' 설정을 활성화하세요.",
+		},
+		"ZooKeeperQuorumLost": {
+			SummaryTpl:        "ZooKeeper 앙상블 리더 선출 실패 또는 과반수 쿼럼 상실.",
+			RecommendedAction: "과반수(N/2 + 1)의 ZooKeeper 노드가 정상 실행 중인지 확인하고 2888/3888 포트 통신을 점검하세요.",
+		},
+		"ZooKeeperSessionExpired": {
+			SummaryTpl:        "ZooKeeper 클라이언트 세션 만료 (네트워크 파티션 또는 GC 일시정지로 인한 하트비트 누락).",
+			RecommendedAction: "클라이언트 JVM GC 튜닝으로 긴 일시정지를 방지하고 tickTime/maxSessionTimeout을 상향 조정하세요.",
+		},
+		"ValkeyOOM": {
+			SummaryTpl:        "Valkey 인메모리 사용량이 maxmemory 한도에 도달하여 신규 쓰기 거부.",
+			RecommendedAction: "valkey.conf의 maxmemory 한도를 늘리거나 'maxmemory-policy allkeys-lru' 키 축출 정책을 설정하세요.",
+		},
+		"ValkeyReadOnlyReplica": {
+			SummaryTpl:        "Valkey 읽기 전용 복제본(ReadOnly Replica)에 쓰기 명령 실행 시도.",
+			RecommendedAction: "쓰기 트래픽을 Valkey 마스터(Primary) 엔드포인트로 전송하도록 클라이언트 설정을 변경하세요.",
+		},
+		"ValkeyClusterDown": {
+			SummaryTpl:        "Valkey 클러스터 슬롯 미할당 또는 마스터 노드 과반수 다운 (CLUSTERDOWN).",
+			RecommendedAction: "'valkey-cli cluster check'로 슬롯 커버리지를 점검하고 다운된 마스터를 복구하세요.",
+		},
+		"PostgresTxidExhaustion": {
+			SummaryTpl:        "PostgreSQL 트랜잭션 ID 래핑(TXID Wraparound) 방지를 위해 데이터베이스가 비상 잠금(읽기 전용)됨.",
+			RecommendedAction: "단일 사용자 모드로 진입하여 'VACUUM FREEZE ANALYZE'를 즉시 수행하고 autovacuum 설정을 점검하세요.",
+		},
+		"PostgresLockTimeout": {
+			SummaryTpl:        "PostgreSQL 테이블/행 락(Lock) 획득 대기 시간 초과로 쿼리가 취소됨.",
+			RecommendedAction: "pg_stat_activity에서 블로킹 트랜잭션을 점검하고 배타적 DDL/DML 락 경합을 해소하세요.",
+		},
+		"PostgresStatementTimeout": {
+			SummaryTpl:        "PostgreSQL 개별 쿼리 실행 시간 한도(statement_timeout) 초과로 쿼리가 취소됨.",
+			RecommendedAction: "느린 쿼리에 인덱스를 추가하거나 EXPLAIN ANALYZE로 실행 계획을 튜닝하세요.",
+		},
+		"JenkinsDiskSpaceExhausted": {
+			SummaryTpl:        "Jenkins 컨트롤러 또는 에이전트 노드의 디스크 가용 공간이 임계치 미만으로 고갈됨.",
+			RecommendedAction: "Jenkins 홈/워크스페이스 PVC 용량을 확장하고 파이프라인 후처리에 'cleanWs()'를 추가하세요.",
+		},
+		"JenkinsAgentRemotingChannelClosed": {
+			SummaryTpl:        "Jenkins 마스터와 빌드 에이전트 간의 Remoting 통신 채널이 단절됨.",
+			RecommendedAction: "에이전트 파드의 OOMKilled 여부를 확인하고 컨트롤러의 JNLP(50000) 포트 연결성을 점검하세요.",
+		},
+		"NexusBlobStoreFull": {
+			SummaryTpl:        "Nexus Repository 블롭 저장소(Blob Store) 저장 공간 고갈로 아티팩트 업로드 실패.",
+			RecommendedAction: "Nexus PVC 스토리지를 증설하고 'Compact blob store' 및 오래된 아티팩트 정리 작업을 실행하세요.",
+		},
+		"NexusDatabaseLocked": {
+			SummaryTpl:        "Nexus 내부 임베디드 데이터베이스(OrientDB/H2) 락 충돌로 트랜잭션 중단.",
+			RecommendedAction: "Nexus 파드를 재시작하여 고아 락을 해제하고 필요 시 DB 복구 유틸리티를 실행하세요.",
+		},
+		"ArgoWorkflowDeadlineExceeded": {
+			SummaryTpl:        "Argo Workflow 파이프라인 또는 태스크가 'activeDeadlineSeconds' 제한 시간을 초과함.",
+			RecommendedAction: "워크플로우 템플릿의 'activeDeadlineSeconds'를 상향 조정하거나 I/O 병목을 프로파일링하세요.",
+		},
+		"ArgoArtifactSaveFailed": {
+			SummaryTpl:        "Argo Workflow 빌드 출력물(Artifact)을 원격 아티팩트 저장소(S3/GCS)에 저장 실패.",
+			RecommendedAction: "artifactRepository 설정의 버킷 자격 증명(Secret/IAM) 및 네트워크 연결성을 점검하세요.",
+		},
+		"ArgoRolloutAnalysisFailed": {
+			SummaryTpl:        "Argo Rollouts 카나리 배포 검증(AnalysisRun) 지표 측정 실패로 배포 자동 롤백.",
+			RecommendedAction: "AnalysisTemplate의 Prometheus 쿼리 성공률/레이턴시 지표 및 카나리 파드 로그를 점검하세요.",
+		},
+		"ArgoRolloutTrafficRoutingFailed": {
+			SummaryTpl:        "Argo Rollouts 트래픽 라우팅 플러그인(ALB/Istio/SMI) 가중치 분할 업데이트 실패.",
+			RecommendedAction: "Ingress 또는 VirtualService 매핑 spec 및 컨트롤러 RBAC 권한을 점검하세요.",
+		},
+		"KyvernoAdmissionPolicyViolation": {
+			SummaryTpl:        "Kyverno 보안/거버넌스 어드미션 정책(ClusterPolicy) 위반으로 파드 생성 차단.",
+			RecommendedAction: "에러 메시지의 정책 요구사항(보안 컨텍스트, 라벨, 이미지 태그 등)을 파드 스펙에 보강하세요.",
+		},
+		"KyvernoWebhookTimeout": {
+			SummaryTpl:        "Kyverno 어드미션 웹훅 컨트롤러 응답 지연(타임아웃) 또는 웹훅 TLS 인증서 만료.",
+			RecommendedAction: "kyverno 파드의 리소스 부하를 점검하고 9443 포트 통신 및 Webhook TLS Secret을 확인하세요.",
+		},
+		"GatekeeperConstraintViolation": {
+			SummaryTpl:        "OPA Gatekeeper 제약 조건(Constraint) 위반으로 쿠버네티스 리소스 생성 거부.",
+			RecommendedAction: "Gatekeeper Constraint 규정 위반 항목을 수정하고 'kubectl get constraints'로 위반 내역을 조회하세요.",
+		},
+		"GatekeeperWebhookFailure": {
+			SummaryTpl:        "Gatekeeper 검증 웹훅(validation.gatekeeper.sh) 호출 실패 또는 타임아웃.",
+			RecommendedAction: "gatekeeper-controller-manager 파드 상태 및 웹훅 방화벽/failurePolicy 설정을 점검하세요.",
+		},
+		"VaultAuthRoleNotFound": {
+			SummaryTpl:        "Vault Secrets Operator의 VaultAuth 인증 역할(Role)이 Vault 서버에 존재하지 않음.",
+			RecommendedAction: "Vault 서버의 Kubernetes Auth 설정에 해당 role이 등록되어 있는지 확인하세요 ('vault read auth/kubernetes/role/<role>').",
+		},
+		"VaultSecretSyncFailed": {
+			SummaryTpl:        "Vault Secrets Operator가 Vault 시크릿 경로를 찾지 못하거나(404) 시크릿 동기화 권한 거부.",
+			RecommendedAction: "VaultStaticSecret의 시크릿 경로(path) 및 Vault 정책(Policy) 읽기 권한을 점검하세요.",
+		},
+		"SecretProviderClassNotFound": {
+			SummaryTpl:        "Secrets Store CSI Driver가 참조하는 SecretProviderClass 리소스를 찾을 수 없음.",
+			RecommendedAction: "동일 네임스페이스에 SecretProviderClass가 존재하는지 확인하고 볼륨 spec의 이름 오탈자를 수정하세요.",
+		},
+		"SecretsStoreCSIMountFailed": {
+			SummaryTpl:        "Secrets Store CSI 드라이버 프로바이더(GCP/Vault/Azure/AWS) 시크릿 마운트 권한 거절.",
+			RecommendedAction: "클라우드 프로바이더 IAM 권한 및 Workload Identity 바인딩 상태를 점검하세요.",
+		},
+		"NFSMountAccessDenied": {
+			SummaryTpl:        "NFS 서버의 익스포트(Export) 디렉토리 마운트 권한 거절 (접근 제어 또는 no_root_squash 누락).",
+			RecommendedAction: "NFS 서버의 /etc/exports에서 워커 노드 CIDR 허용 및 'no_root_squash' 옵션을 확인하세요.",
+		},
+		"NFSConnectionTimeout": {
+			SummaryTpl:        "NFS 스토리지 서버 연결 타임아웃 또는 포트(2049/RPC 111) 연결 거부.",
+			RecommendedAction: "NFS 서버 가동 상태를 확인하고 방화벽에서 TCP/UDP 2049 및 111 포트를 허용하세요.",
+		},
+		"NFSStaleFileHandle": {
+			SummaryTpl:        "NFS 서버에서 마운트된 디렉토리/파일이 재배치 또는 삭제되어 파일 핸들이 무효화됨 (ESTALE).",
+			RecommendedAction: "노드에서 해당 NFS 마운트를 언마운트('umount -l') 후 파드를 재생성하세요.",
+		},
+		"KubeDNSNXDomainStorm": {
+			SummaryTpl:        "kube-dns 업스트림 네임서버 장애 또는 과도한 NXDOMAIN 쿼리 폭주로 도메인 해석 실패.",
+			RecommendedAction: "kube-dns upstreamNameservers 설정을 점검하고 파드 ndots 검색 도메인 설정을 최적화하세요.",
+		},
+		"KubeDNSHealthCheckFailed": {
+			SummaryTpl:        "kube-dns 사이드카 헬스체크(10054) 실패로 인한 파드 비정상 재시작.",
+			RecommendedAction: "kube-dns 파드의 CPU/메모리 스펙을 증설하고 dnsmasq/skydns 컨테이너 상태를 점검하세요.",
+		},
+		"MetricsServerKubeletScrapeFailed": {
+			SummaryTpl:        "metrics-server가 노드 Kubelet(10250) 메트릭 스크랩 실패 (방화벽 차단 또는 Kubelet 인증서 검증 실패).",
+			RecommendedAction: "metrics-server 인수에 '--kubelet-insecure-tls'를 추가하거나 10250 포트 방화벽을 허용하세요.",
+		},
+		"LiteLLMRateLimitExceeded": {
+			SummaryTpl:        "LiteLLM 프록시 연결 업스트림 LLM 프로바이더의 TPM/RPM 속도 제한 초과 (HTTP 429).",
+			RecommendedAction: "LiteLLM에 모델 폴백(fallback) 라우팅을 구성하거나 Redis/Valkey 캐싱을 활성화하세요.",
+		},
+		"LiteLLMBudgetExceeded": {
+			SummaryTpl:        "LiteLLM 사용자/팀/가상 키에 할당된 비용 예산(Budget) 한도 도달.",
+			RecommendedAction: "LiteLLM Admin API/UI에서 해당 사용자/키의 'max_budget' 한도를 증설하거나 리셋하세요.",
+		},
+		"LiteLLMContextWindowExceeded": {
+			SummaryTpl:        "요청된 프롬프트와 생성 토큰의 합계가 LLM 모델의 최대 컨텍스트 윈도우 길이를 초과함.",
+			RecommendedAction: "대화 히스토리를 슬라이딩 윈도우로 압축하거나 더 큰 컨텍스트 윈도우를 지원하는 모델로 전환하세요.",
+		},
+		"LiteLLMAuthenticationError": {
+			SummaryTpl:        "LiteLLM 프록시 가상 키 인증 실패 또는 업스트림 LLM 프로바이더 API 키 무효.",
+			RecommendedAction: "클라이언트의 Bearer 토큰 및 LiteLLM 환경변수의 프로바이더 API 키를 점검하세요.",
+		},
 		"DiskNoSpaceLeft": {
 			SummaryTpl:        "컨테이너 로컬 파일시스템의 저장 공간이 고갈되었습니다 (ENOSPC).",
 			RecommendedAction: "임시 파일을 정리하거나 파드의 ephemeral-storage 할당량을 증설하세요.",
@@ -758,6 +946,194 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "Git provider API rate limit exceeded.",
 			RecommendedAction: "Configure GitHub App or Personal Access Token (PAT) with higher API quotas.",
 		},
+		"GCPAuthDefaultCredentialsMissing": {
+			SummaryTpl:        "Google Cloud SDK Application Default Credentials (ADC) missing or metadata server unreachable.",
+			RecommendedAction: "Set GOOGLE_APPLICATION_CREDENTIALS or verify GKE Workload Identity service account annotations.",
+		},
+		"GCPGeminiQuotaExceeded": {
+			SummaryTpl:        "Google Gemini API rate limit or project quota exceeded (HTTP 429 ResourceExhausted).",
+			RecommendedAction: "Request a quota increase for Gemini API (TPM, RPM) or implement exponential backoff retry.",
+		},
+		"GCPGeminiSafetyBlocked": {
+			SummaryTpl:        "Google Gemini response candidate or prompt blocked by safety filters.",
+			RecommendedAction: "Adjust Gemini safetySettings thresholds or sanitize prompt inputs.",
+		},
+		"GCPGeminiAuthFailed": {
+			SummaryTpl:        "Google Gemini API Key is invalid or unauthenticated (HTTP 401/400).",
+			RecommendedAction: "Verify GEMINI_API_KEY environment variable and API key status in GCP Console.",
+		},
+		"GCPBigQueryQuotaExceeded": {
+			SummaryTpl:        "BigQuery query exceeded bytes billed limit or rate limit quota.",
+			RecommendedAction: "Increase 'maximum_bytes_billed' or optimize query with partition/cluster filters.",
+		},
+		"GCPBigQueryQueryFailed": {
+			SummaryTpl:        "BigQuery table/dataset permission denied (403) or not found (404).",
+			RecommendedAction: "Grant 'roles/bigquery.dataViewer' and 'roles/bigquery.jobUser' to the service account.",
+		},
+		"GCPStorageChecksumMismatch": {
+			SummaryTpl:        "Google Cloud Storage data corruption: CRC32c or MD5 checksum mismatch during transfer.",
+			RecommendedAction: "Check network MTU/proxy and tune GCS multipart upload chunk sizes.",
+		},
+		"GCPStorageAccessDenied": {
+			SummaryTpl:        "Google Cloud Storage bucket or object access denied (HTTP 403 Forbidden).",
+			RecommendedAction: "Grant 'roles/storage.objectViewer' or 'roles/storage.objectAdmin' to the service account.",
+		},
+		"ClickHouseTooManyParts": {
+			SummaryTpl:        "ClickHouse too many unmerged data parts in table due to high-frequency small inserts.",
+			RecommendedAction: "Batch inserts into larger chunks (10,000+ rows) or use the Buffer table engine.",
+		},
+		"ClickHouseMemoryLimit": {
+			SummaryTpl:        "ClickHouse memory limit exceeded for query or server total.",
+			RecommendedAction: "Increase max_server_memory_usage and pod memory limit, or enable spill-to-disk external group by.",
+		},
+		"ClickHouseZooKeeperSessionLost": {
+			SummaryTpl:        "ClickHouse lost ZooKeeper coordination session, halting replicated engine tables.",
+			RecommendedAction: "Check ZooKeeper cluster status and increase session_timeout_ms in ClickHouse config.",
+		},
+		"ClickHouseReadOnlyReplica": {
+			SummaryTpl:        "ClickHouse table switched to read-only mode due to replica synchronization failure.",
+			RecommendedAction: "Run 'SYSTEM RESTART REPLICA <table_name>' to reinitialize the replica session.",
+		},
+		"ZooKeeperDiskFull": {
+			SummaryTpl:        "ZooKeeper transaction log (dataLogDir) or snapshot disk space exhausted.",
+			RecommendedAction: "Expand ZooKeeper storage PVC and enable autopurge.purgeInterval=1.",
+		},
+		"ZooKeeperQuorumLost": {
+			SummaryTpl:        "ZooKeeper ensemble quorum lost or leader election failure.",
+			RecommendedAction: "Ensure a majority (N/2 + 1) of ZooKeeper nodes are healthy and ports 2888/3888 are reachable.",
+		},
+		"ZooKeeperSessionExpired": {
+			SummaryTpl:        "ZooKeeper client session expired due to network partition or long JVM GC pauses.",
+			RecommendedAction: "Tune client JVM GC to eliminate long Stop-The-World pauses and increase tickTime.",
+		},
+		"ValkeyOOM": {
+			SummaryTpl:        "Valkey maxmemory limit reached; write commands rejected with OOM.",
+			RecommendedAction: "Increase 'maxmemory' in valkey.conf or configure eviction policy (maxmemory-policy allkeys-lru).",
+		},
+		"ValkeyReadOnlyReplica": {
+			SummaryTpl:        "Attempted write command against a read-only Valkey replica.",
+			RecommendedAction: "Direct write traffic to the Valkey Primary endpoint.",
+		},
+		"ValkeyClusterDown": {
+			SummaryTpl:        "Valkey cluster is down; hash slots not fully covered or quorum lost.",
+			RecommendedAction: "Run 'valkey-cli cluster check' to inspect slot allocation and restart failed masters.",
+		},
+		"PostgresTxidExhaustion": {
+			SummaryTpl:        "PostgreSQL stopped accepting writes to prevent catastrophic TXID wraparound data loss.",
+			RecommendedAction: "Run 'VACUUM FREEZE ANALYZE' in single-user mode immediately and tune autovacuum settings.",
+		},
+		"PostgresLockTimeout": {
+			SummaryTpl:        "PostgreSQL query canceled due to lock_timeout waiting for table or row lock.",
+			RecommendedAction: "Check 'pg_stat_activity' for blocking transactions holding conflicting locks.",
+		},
+		"PostgresStatementTimeout": {
+			SummaryTpl:        "PostgreSQL statement canceled due to statement_timeout.",
+			RecommendedAction: "Add indexes or optimize query plan with EXPLAIN ANALYZE.",
+		},
+		"JenkinsDiskSpaceExhausted": {
+			SummaryTpl:        "Jenkins controller or agent workspace disk space exhausted below threshold.",
+			RecommendedAction: "Expand Jenkins PVC volume and add 'cleanWs()' in pipeline post-actions.",
+		},
+		"JenkinsAgentRemotingChannelClosed": {
+			SummaryTpl:        "Jenkins remoting channel closed between controller and build agent.",
+			RecommendedAction: "Check if agent pod was OOMKilled and verify JNLP (port 50000) connectivity.",
+		},
+		"NexusBlobStoreFull": {
+			SummaryTpl:        "Nexus Repository blob store ran out of disk space, rejecting artifact uploads.",
+			RecommendedAction: "Expand Nexus PVC storage and run 'Compact blob store' task.",
+		},
+		"NexusDatabaseLocked": {
+			SummaryTpl:        "Nexus internal database (OrientDB/H2) locked, blocking database transactions.",
+			RecommendedAction: "Restart Nexus pod gracefully to clear orphan locks.",
+		},
+		"ArgoWorkflowDeadlineExceeded": {
+			SummaryTpl:        "Argo Workflow task or step exceeded activeDeadlineSeconds timeout.",
+			RecommendedAction: "Increase 'activeDeadlineSeconds' in the workflow template.",
+		},
+		"ArgoArtifactSaveFailed": {
+			SummaryTpl:        "Argo Workflow failed to upload step output artifacts to remote repository.",
+			RecommendedAction: "Verify artifactRepository secret credentials and network connectivity to object storage.",
+		},
+		"ArgoRolloutAnalysisFailed": {
+			SummaryTpl:        "Argo Rollouts canary AnalysisRun metrics evaluation failed, triggering automated abort/rollback.",
+			RecommendedAction: "Inspect Prometheus queries in the AnalysisTemplate and check canary pod error logs.",
+		},
+		"ArgoRolloutTrafficRoutingFailed": {
+			SummaryTpl:        "Argo Rollouts failed to update traffic routing split weights via mesh or ingress plugin.",
+			RecommendedAction: "Verify Rollout trafficRouting spec matches Ingress/VirtualService resource names.",
+		},
+		"KyvernoAdmissionPolicyViolation": {
+			SummaryTpl:        "Pod creation denied by Kyverno ClusterPolicy validation rule.",
+			RecommendedAction: "Update pod spec to satisfy the violated Kyverno ClusterPolicy.",
+		},
+		"KyvernoWebhookTimeout": {
+			SummaryTpl:        "Kyverno admission webhook timed out or TLS certificate expired.",
+			RecommendedAction: "Check kyverno controller pod health, port 9443 connectivity, and TLS secret validity.",
+		},
+		"GatekeeperConstraintViolation": {
+			SummaryTpl:        "Resource creation rejected by OPA Gatekeeper constraint violation.",
+			RecommendedAction: "Update resource manifest to comply with the Gatekeeper constraint rules.",
+		},
+		"GatekeeperWebhookFailure": {
+			SummaryTpl:        "Gatekeeper validation webhook call failed or timed out.",
+			RecommendedAction: "Inspect gatekeeper-controller-manager pods health and firewall rules.",
+		},
+		"VaultAuthRoleNotFound": {
+			SummaryTpl:        "Vault Secrets Operator VaultAuth role not found on the Vault server.",
+			RecommendedAction: "Verify role exists in Vault ('vault read auth/kubernetes/role/<role>').",
+		},
+		"VaultSecretSyncFailed": {
+			SummaryTpl:        "Vault Secrets Operator secret synchronization failed (404 Not Found or Permission Denied).",
+			RecommendedAction: "Confirm the secret path and mount point exist in Vault and check token read capabilities.",
+		},
+		"SecretProviderClassNotFound": {
+			SummaryTpl:        "Secrets Store CSI Driver referenced SecretProviderClass resource not found in namespace.",
+			RecommendedAction: "Ensure SecretProviderClass exists in the same namespace as the pod.",
+		},
+		"SecretsStoreCSIMountFailed": {
+			SummaryTpl:        "Secrets Store CSI Driver provider mount failed due to permission denied or invalid credentials.",
+			RecommendedAction: "Verify provider IAM credentials and Workload Identity federation bindings.",
+		},
+		"NFSMountAccessDenied": {
+			SummaryTpl:        "NFS server denied mount access (export IP restriction or missing no_root_squash).",
+			RecommendedAction: "Check '/etc/exports' on NFS server for worker node CIDR and 'no_root_squash'.",
+		},
+		"NFSConnectionTimeout": {
+			SummaryTpl:        "NFS storage server connection timed out or port 2049/111 unreachable.",
+			RecommendedAction: "Verify NFS server host is running and ensure firewall permits ports 2049 and 111.",
+		},
+		"NFSStaleFileHandle": {
+			SummaryTpl:        "NFS stale file handle (ESTALE): mounted directory was removed or relocated on the server.",
+			RecommendedAction: "Lazy unmount the stale mount ('umount -l') on the host node and recreate the pod.",
+		},
+		"KubeDNSNXDomainStorm": {
+			SummaryTpl:        "kube-dns upstream nameserver failure or excessive NXDOMAIN query storm.",
+			RecommendedAction: "Verify kube-dns upstreamNameservers in ConfigMap and optimize ndots in pod dnsConfig.",
+		},
+		"KubeDNSHealthCheckFailed": {
+			SummaryTpl:        "kube-dns sidecar container health check on port 10054 failed.",
+			RecommendedAction: "Increase CPU and memory limits for kube-dns pods.",
+		},
+		"MetricsServerKubeletScrapeFailed": {
+			SummaryTpl:        "metrics-server failed to scrape Kubelet metrics on port 10250 (firewall or TLS SAN mismatch).",
+			RecommendedAction: "Add '--kubelet-insecure-tls' to metrics-server container args for self-signed Kubelet certificates.",
+		},
+		"LiteLLMRateLimitExceeded": {
+			SummaryTpl:        "LiteLLM upstream LLM provider rate limit (TPM/RPM) exceeded (HTTP 429).",
+			RecommendedAction: "Configure model fallbacks in LiteLLM config.yaml or enable response caching.",
+		},
+		"LiteLLMBudgetExceeded": {
+			SummaryTpl:        "LiteLLM user/team/key budget limit exceeded; further requests rejected.",
+			RecommendedAction: "Increase or reset 'max_budget' for the user/key via LiteLLM Admin API or UI.",
+		},
+		"LiteLLMContextWindowExceeded": {
+			SummaryTpl:        "Prompt and generation tokens exceeded LLM model maximum context window length.",
+			RecommendedAction: "Truncate or summarize prompt history to fit within the context window.",
+		},
+		"LiteLLMAuthenticationError": {
+			SummaryTpl:        "LiteLLM virtual key authentication failed or upstream LLM provider API key invalid.",
+			RecommendedAction: "Verify client Bearer token matches LiteLLM virtual key and check upstream API keys.",
+		},
 	},
 }
 
@@ -785,7 +1161,24 @@ func Localize(rootCause, lang, defaultSummary, defaultAction, detail string) (st
 		strings.HasPrefix(defaultSummary, "Elasticsearch") ||
 		strings.HasPrefix(defaultSummary, "Patroni") ||
 		strings.HasPrefix(defaultSummary, "PostgreSQL") ||
-		strings.HasPrefix(defaultSummary, "Argo CD")) {
+		strings.HasPrefix(defaultSummary, "Argo CD") ||
+		strings.HasPrefix(defaultSummary, "Google") ||
+		strings.HasPrefix(defaultSummary, "Gemini") ||
+		strings.HasPrefix(defaultSummary, "BigQuery") ||
+		strings.HasPrefix(defaultSummary, "ClickHouse") ||
+		strings.HasPrefix(defaultSummary, "ZooKeeper") ||
+		strings.HasPrefix(defaultSummary, "Valkey") ||
+		strings.HasPrefix(defaultSummary, "Jenkins") ||
+		strings.HasPrefix(defaultSummary, "Nexus") ||
+		strings.HasPrefix(defaultSummary, "Argo Workflow") ||
+		strings.HasPrefix(defaultSummary, "Argo Rollouts") ||
+		strings.HasPrefix(defaultSummary, "Kyverno") ||
+		strings.HasPrefix(defaultSummary, "OPA") ||
+		strings.HasPrefix(defaultSummary, "Gatekeeper") ||
+		strings.HasPrefix(defaultSummary, "NFS") ||
+		strings.HasPrefix(defaultSummary, "kube-dns") ||
+		strings.HasPrefix(defaultSummary, "metrics-server") ||
+		strings.HasPrefix(defaultSummary, "LiteLLM")) {
 		return defaultSummary, defaultAction
 	}
 	langDict, ok := i18nRegistry[lang]

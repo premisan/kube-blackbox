@@ -1142,6 +1142,114 @@ CoreDNS is halting to avoid a loop.`
 	}
 }
 
+func TestDiagnose_GCPGeminiQuota(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `google.genai.errors.APIError: 429 RESOURCE_EXHAUSTED. Quota exceeded for Generate Content API requests`
+	input := DiagnosticInput{
+		ContainerName: "ai-service",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "ai-service",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "GCPGeminiQuotaExceeded" {
+		t.Fatalf("expected GCPGeminiQuotaExceeded, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "Gemini_ResourceExhausted_429" {
+		t.Fatalf("expected Gemini_ResourceExhausted_429, got: %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_ClickHouseParts(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `DB::Exception: Too many parts (320) in all data parts in table. Merges are processing significantly slower than inserts.`
+	input := DiagnosticInput{
+		ContainerName: "clickhouse",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "clickhouse",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "ClickHouseTooManyParts" {
+		t.Fatalf("expected ClickHouseTooManyParts, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "ClickHouse_TooManyParts" {
+		t.Fatalf("expected ClickHouse_TooManyParts, got: %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_KyvernoViolation(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `Error from server: admission webhook "validate.kyverno.svc" denied the request: policy require-run-as-non-root failed on resource`
+	input := DiagnosticInput{
+		ContainerName: "app",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "app",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "KyvernoAdmissionPolicyViolation" {
+		t.Fatalf("expected KyvernoAdmissionPolicyViolation, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "Kyverno_PolicyViolation_Denied" {
+		t.Fatalf("expected Kyverno_PolicyViolation_Denied, got: %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_LiteLLMRateLimit(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `litellm.exceptions.RateLimitError: RateLimitError: LLM Provider returned rate limit error: 429 Too Many Requests (TPM/RPM limit exceeded)`
+	input := DiagnosticInput{
+		ContainerName: "litellm-proxy",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "litellm-proxy",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "LiteLLMRateLimitExceeded" {
+		t.Fatalf("expected LiteLLMRateLimitExceeded, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "LiteLLM_Upstream_RateLimit" {
+		t.Fatalf("expected LiteLLM_Upstream_RateLimit, got: %s", ev.ErrorClass)
+	}
+}
+
 
 
 

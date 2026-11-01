@@ -1410,6 +1410,168 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 		return res
 	}
 
+	// 6. Google Cloud SDK Deep Analysis (BigQuery, Gemini, GCS, Auth)
+	gcpDeep := knowledge.AnalyzeGCPSDKLogs(processedLogs)
+	if gcpDeep != nil {
+		category := "Dependency"
+		if gcpDeep.Component == "gcp-auth" {
+			category = "Configuration"
+		}
+		if res == nil || res.MatchedRule == nil {
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "GCPSDK_" + gcpDeep.Component,
+					Category:          category,
+					RootCause:         gcpDeep.RootCause,
+					Confidence:        "High",
+					RecommendedAction: gcpDeep.SuggestedFixKo,
+				},
+				MatchedPattern: "GCPSDK_" + gcpDeep.Component,
+				Category:       category,
+				Snippet:        tailSnippet,
+			}
+		} else {
+			res.MatchedRule.RootCause = gcpDeep.RootCause
+		}
+		res.ErrorClass = gcpDeep.ErrorClass
+		if gcpDeep.SummaryKo != "" {
+			res.Summary = gcpDeep.SummaryKo
+		}
+		if gcpDeep.SuggestedFixKo != "" {
+			res.RecommendedAction = gcpDeep.SuggestedFixKo
+		}
+		return res
+	}
+
+	// 7. Data Infrastructure Deep Analysis (ClickHouse, ZooKeeper, Valkey, PostgreSQL)
+	dataDeep := knowledge.AnalyzeDataInfraLogs(processedLogs)
+	if dataDeep != nil {
+		category := "Dependency"
+		if dataDeep.Component == "clickhouse" || dataDeep.Component == "postgresql" {
+			category = "Application"
+		}
+		if res == nil || res.MatchedRule == nil {
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "DataInfra_" + dataDeep.Component,
+					Category:          category,
+					RootCause:         dataDeep.RootCause,
+					Confidence:        "High",
+					RecommendedAction: dataDeep.SuggestedFixKo,
+				},
+				MatchedPattern: "DataInfra_" + dataDeep.Component,
+				Category:       category,
+				Snippet:        tailSnippet,
+			}
+		} else {
+			res.MatchedRule.RootCause = dataDeep.RootCause
+		}
+		res.ErrorClass = dataDeep.ErrorClass
+		if dataDeep.SummaryKo != "" {
+			res.Summary = dataDeep.SummaryKo
+		}
+		if dataDeep.SuggestedFixKo != "" {
+			res.RecommendedAction = dataDeep.SuggestedFixKo
+		}
+		return res
+	}
+
+	// 8. CI/CD & GitOps Deep Analysis (Jenkins, Nexus, Argo Workflows, Argo Rollouts)
+	cicdDeep := knowledge.AnalyzeCICDGitOpsLogs(processedLogs)
+	if cicdDeep != nil {
+		category := "Application"
+		if cicdDeep.Component == "argo-workflows" || cicdDeep.Component == "argo-rollouts" {
+			category = "Dependency"
+		}
+		if res == nil || res.MatchedRule == nil {
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "CICDGitOps_" + cicdDeep.Component,
+					Category:          category,
+					RootCause:         cicdDeep.RootCause,
+					Confidence:        "High",
+					RecommendedAction: cicdDeep.SuggestedFixKo,
+				},
+				MatchedPattern: "CICDGitOps_" + cicdDeep.Component,
+				Category:       category,
+				Snippet:        tailSnippet,
+			}
+		} else {
+			res.MatchedRule.RootCause = cicdDeep.RootCause
+		}
+		res.ErrorClass = cicdDeep.ErrorClass
+		if cicdDeep.SummaryKo != "" {
+			res.Summary = cicdDeep.SummaryKo
+		}
+		if cicdDeep.SuggestedFixKo != "" {
+			res.RecommendedAction = cicdDeep.SuggestedFixKo
+		}
+		return res
+	}
+
+	// 9. Policy & Security Deep Analysis (Kyverno, Gatekeeper, VSO, Secrets Store CSI)
+	secDeep := knowledge.AnalyzeSecurityPolicyLogs(processedLogs)
+	if secDeep != nil {
+		category := "Configuration"
+		if res == nil || res.MatchedRule == nil {
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "SecurityPolicy_" + secDeep.Component,
+					Category:          category,
+					RootCause:         secDeep.RootCause,
+					Confidence:        "High",
+					RecommendedAction: secDeep.SuggestedFixKo,
+				},
+				MatchedPattern: "SecurityPolicy_" + secDeep.Component,
+				Category:       category,
+				Snippet:        tailSnippet,
+			}
+		} else {
+			res.MatchedRule.RootCause = secDeep.RootCause
+		}
+		res.ErrorClass = secDeep.ErrorClass
+		if secDeep.SummaryKo != "" {
+			res.Summary = secDeep.SummaryKo
+		}
+		if secDeep.SuggestedFixKo != "" {
+			res.RecommendedAction = secDeep.SuggestedFixKo
+		}
+		return res
+	}
+
+	// 10. Cluster Addons & AI Deep Analysis (NFS, Kube-DNS, Metrics-Server, LiteLLM)
+	clusterDeep := knowledge.AnalyzeClusterInfraLogs(processedLogs)
+	if clusterDeep != nil {
+		category := "Infrastructure"
+		if clusterDeep.Component == "litellm" {
+			category = "Dependency"
+		}
+		if res == nil || res.MatchedRule == nil {
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "ClusterAddon_" + clusterDeep.Component,
+					Category:          category,
+					RootCause:         clusterDeep.RootCause,
+					Confidence:        "High",
+					RecommendedAction: clusterDeep.SuggestedFixKo,
+				},
+				MatchedPattern: "ClusterAddon_" + clusterDeep.Component,
+				Category:       category,
+				Snippet:        tailSnippet,
+			}
+		} else {
+			res.MatchedRule.RootCause = clusterDeep.RootCause
+		}
+		res.ErrorClass = clusterDeep.ErrorClass
+		if clusterDeep.SummaryKo != "" {
+			res.Summary = clusterDeep.SummaryKo
+		}
+		if clusterDeep.SuggestedFixKo != "" {
+			res.RecommendedAction = clusterDeep.SuggestedFixKo
+		}
+		return res
+	}
+
 	return res
 }
 
