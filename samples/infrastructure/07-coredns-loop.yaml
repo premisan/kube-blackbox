@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-coredns-loop
+  labels:
+    app: sample-coredns-loop
+    category: infrastructure
+spec:
+  restartPolicy: Always
+  containers:
+    - name: coredns
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] CoreDNS-1.11.1"
+          echo "[INFO] linux/amd64, go1.21.5, release"
+          echo "[INFO] plugin/reload: Running configuration MD5 = 20e7e1f4f89d"
+          echo "plugin/loop: Loop (127.0.0.1:53 -> :53) detected for zone \".\", see https://coredns.io/plugins/loop#troubleshooting." >&2
+          echo "CoreDNS is halting to avoid a loop." >&2
+          exit 2

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-vault-agent-sealed
+  labels:
+    app: sample-vault-agent-sealed
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: vault-agent
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] vault-agent: starting auto-auth using Kubernetes auth method..."
+          echo "[INFO] vault-agent: authenticated successfully with role 'payment-service'"
+          echo "[ERROR] vault-agent: error renewing token or fetching secrets from path 'secret/data/payment/db':" >&2
+          echo "URL: GET https://vault.vault-system.svc:8200/v1/secret/data/payment/db" >&2
+          echo "Code: 503. Errors:" >&2
+          echo "* Vault is sealed" >&2
+          echo "[FATAL] vault-agent: unrecoverable 503 from Vault server. Exiting." >&2
+          exit 1

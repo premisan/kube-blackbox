@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-nginx-syntax-error
+  labels:
+    app: sample-nginx-syntax-error
+    category: configuration
+spec:
+  restartPolicy: Always
+  containers:
+    - name: nginx-ingress
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "-------------------------------------------------------------------------------"
+          echo "NGINX Ingress controller"
+          echo "Release:       v1.9.4"
+          echo "-------------------------------------------------------------------------------"
+          echo "nginx: [emerg] unknown directive \"proxy_set_headerr\" in /etc/nginx/nginx.conf:142" >&2
+          echo "nginx: configuration file /etc/nginx/nginx.conf test failed" >&2
+          exit 1

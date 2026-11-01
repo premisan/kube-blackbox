@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-envoy-circuit-breaker
+  labels:
+    app: sample-envoy-circuit-breaker
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: istio-proxy
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[2026-11-02T02:00:00.123Z] \"POST /api/v1/checkout HTTP/1.1\" 503 UO 0 0 1 - \"-\" \"curl/8.0\" \"checkout.prod:8080\" \"10.244.1.25:8080\" outbound|8080||checkout.prod.svc.cluster.local - 10.244.1.25:8080 10.244.0.12:45678 - default" >&2
+          echo "[2026-11-02T02:00:01.456Z] \"POST /api/v1/checkout HTTP/1.1\" 503 UO 0 0 1 - \"-\" \"curl/8.0\" \"checkout.prod:8080\" \"10.244.1.25:8080\" outbound|8080||checkout.prod.svc.cluster.local - 10.244.1.25:8080 10.244.0.12:45679 - default" >&2
+          echo "[FATAL] Upstream overflow circuit breaker tripped. Max pending connections exceeded." >&2
+          exit 1

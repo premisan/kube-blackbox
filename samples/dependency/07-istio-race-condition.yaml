@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-istio-startup-race
+  labels:
+    app: sample-istio-startup-race
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: app
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Main application starting immediately..."
+          echo "[INFO] Attempting to connect to external MySQL database at db.production.internal:3306..."
+          echo "[ERROR] dial tcp 10.96.0.10:3306: connect: connection refused" >&2
+          echo "[FATAL] Failed to initialize database connection pool before proxy started. Crashing." >&2
+          exit 1
+    - name: istio-proxy
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] istio-proxy starting slowly (downloading CDS/LDS clusters from istiod)..."
+          sleep 6
+          echo "[INFO] Pilot discovery connected. Envoy proxy listening on 15001 and 15021."
+          sleep 3600
