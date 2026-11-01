@@ -101,3 +101,31 @@ func TestSynthesizer_CulpritCode(t *testing.T) {
 		t.Fatalf("expected culprit code mentioned in RootCauseChain, got: %v", result.RootCauseChain)
 	}
 }
+
+func TestSynthesizer_SidecarCascade(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "production",
+		PodName:       "payment-api",
+		ContainerName: "payment-api",
+		ExitCode:      &exitCode,
+		RootCause:     "SidecarCascadeFailure",
+		Category:      "Dependency",
+		Confidence:    "High",
+		Language:      "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) == 0 {
+		t.Fatalf("expected RootCauseChain for SidecarCascadeFailure")
+	}
+	if !strings.Contains(result.InferredContext, "사이드카") {
+		t.Fatalf("expected InferredContext to mention sidecar, got: %s", result.InferredContext)
+	}
+}
+

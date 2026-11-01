@@ -93,6 +93,41 @@ var eventRules = []EventRule{
 			return evt.Reason == "FailedCreatePodSandBox"
 		},
 	},
+	{
+		Name:              "SystemOOMKilled",
+		Category:          "Infrastructure",
+		RootCause:         "SystemOOMKilled",
+		Confidence:        "High",
+		SummaryTpl:        "Kernel or system OOM killer invoked: %s",
+		RecommendedAction: "Host or cgroup ran out of memory. Review node memory utilization and container memory limits.",
+		Match: func(evt corev1.Event, containerName string) bool {
+			lower := strings.ToLower(evt.Message)
+			return (evt.Reason == "SystemOOM" || evt.Reason == "OOMKilling") ||
+				((evt.Reason == "Killing" || evt.Reason == "Unhealthy") && (strings.Contains(lower, "out of memory") || strings.Contains(lower, "cgroup out of memory")))
+		},
+	},
+	{
+		Name:              "NodeMemoryPressure",
+		Category:          "Infrastructure",
+		RootCause:         "NodeMemoryPressure",
+		Confidence:        "High",
+		SummaryTpl:        "Node reported MemoryPressure condition: %s",
+		RecommendedAction: "Node memory is critically exhausted. Scale out node group or reduce workload memory limits.",
+		Match: func(evt corev1.Event, containerName string) bool {
+			return strings.Contains(evt.Reason, "MemoryPressure") || strings.Contains(evt.Message, "NodeHasInsufficientMemory")
+		},
+	},
+	{
+		Name:              "NodeDiskPressure",
+		Category:          "Infrastructure",
+		RootCause:         "NodeDiskPressure",
+		Confidence:        "High",
+		SummaryTpl:        "Node reported DiskPressure condition: %s",
+		RecommendedAction: "Node ephemeral storage or root disk is full. Clean up unused container images or expand node disk.",
+		Match: func(evt corev1.Event, containerName string) bool {
+			return strings.Contains(evt.Reason, "DiskPressure") || strings.Contains(evt.Message, "NodeHasDiskPressure")
+		},
+	},
 }
 
 type EventAnalysisResult struct {

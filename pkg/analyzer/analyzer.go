@@ -22,17 +22,17 @@ type DiagnosticInput struct {
 	ContainerStatus *corev1.ContainerStatus
 	Events          []corev1.Event
 	PreviousLogs    string
-	Language        string // Target localization language ("en", "ko", "ja", etc.)
+	Language        string // Target localization language ("en", "ko", etc.)
 }
 
-// Diagnose evaluates container termination status, events, logs, and pod specs to deduce root cause.
+// Diagnose evaluates container termination status, events, logs, pod specs, and sidecar cascades.
 func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Diagnosis, observerv1alpha1.Evidence) {
 	var evidence observerv1alpha1.Evidence
 	var diagnosis observerv1alpha1.Diagnosis
 
 	lang := input.Language
 	if lang == "" {
-		lang = "en"
+		lang = "ko"
 	}
 
 	cs := input.ContainerStatus
@@ -75,6 +75,12 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 		evidence.CulpritCode = logRes.CulpritCode
 	}
 
+	// 3. Sidecar & InitContainer Cascade Analysis
+	sidecarRes := AnalyzeSidecarCascade(input.Pod, input.ContainerName, input.PreviousLogs)
+	if sidecarRes != nil && sidecarRes.CascadeDetected {
+		evidence.SidecarCascade = sidecarRes.Description
+	}
+
 	// ==================== Step 1: Explicit Kernel & Runtime Termination ====================
 	if termState != nil {
 		// OOMKilled by cgroup/kernel
@@ -108,25 +114,49 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 		}
 	}
 
-	// ==================== Step 2: Kubernetes Events Correlation ====================
+	// ==================== Step 2: InitContainer & Sidecar Cascade Prioritization ====================
+	if sidecarRes != nil && sidecarRes.CascadeDetected {
+		if sidecarRes.IsInitContainer {
+			setDiag(&diagnosis, "Infrastructure", "InitContainerFailed", "High",
+				fmt.Sprintf("Application container unable to start due to initContainer '%s' failure.", sidecarRes.SidecarName),
+				fmt.Sprintf("Inspect logs and termination reason of initContainer '%s'.", sidecarRes.SidecarName),
+				lang, sidecarRes.SidecarName)
+			evidence.ErrorClass = "InitContainerFailure"
+			return diagnosis, evidence
+		}
+
+		// If connection refused or no logs and sidecar crashed
+		if logRes == nil || logRes.MatchedRule == nil ||
+			logRes.MatchedRule.RootCause == "ConnectionRefused" ||
+			logRes.MatchedRule.RootCause == "NginxBadGatewayUpstream" ||
+			logRes.MatchedRule.RootCause == "EnvoyNoHealthyUpstream" {
+			setDiag(&diagnosis, "Dependency", "SidecarCascadeFailure", "High",
+				fmt.Sprintf("Container failure correlated with crash or unready state of peer sidecar '%s'.", sidecarRes.SidecarName),
+				fmt.Sprintf("Check health, logs, and configuration of sidecar '%s'.", sidecarRes.SidecarName),
+				lang, sidecarRes.SidecarName)
+			evidence.ErrorClass = "SidecarCascade"
+			return diagnosis, evidence
+		}
+	}
+
+	// ==================== Step 3: Kubernetes Events Correlation ====================
 	if eventRes != nil && eventRes.MatchedRule != nil {
 		setDiag(&diagnosis, eventRes.Category, eventRes.MatchedRule.RootCause, eventRes.MatchedRule.Confidence,
 			eventRes.Summary, eventRes.RecommendedAction, lang, "")
 		return diagnosis, evidence
 	}
 
-	// ==================== Step 3: Deep Log Signature Pattern Matching ====================
+	// ==================== Step 4: Deep Log Signature Pattern Matching ====================
 	if logRes != nil && logRes.MatchedRule != nil {
 		setDiag(&diagnosis, logRes.Category, logRes.MatchedRule.RootCause, logRes.MatchedRule.Confidence,
 			logRes.MatchedRule.SummaryTpl, logRes.MatchedRule.RecommendedAction, lang, logRes.ErrorLocation)
 		return diagnosis, evidence
 	}
 
-	// ==================== Step 4: Combined Heuristic Reasoning ====================
+	// ==================== Step 5: Combined Heuristic Reasoning ====================
 	if termState != nil {
 		switch termState.ExitCode {
 		case 137: // SIGKILL (128 + 9)
-			// Check if container has memory limits defined and logs contain memory error
 			if hasMemoryLimit(input.Pod, input.ContainerName) && containsMemoryKeywords(input.PreviousLogs) {
 				setDiag(&diagnosis, "Infrastructure", "ProbableOOMKilled", "High",
 					"Container killed with SIGKILL (137) with memory limit defined and memory exhaustion indicators in log.",
@@ -155,6 +185,14 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 				"Check native C/C++ libraries, unsafe pointers, or corrupt shared memory objects.",
 				lang, "")
 			evidence.ErrorClass = "SIGSEGV"
+			return diagnosis, evidence
+
+		case 135: // SIGBUS (128 + 7)
+			setDiag(&diagnosis, "Application", "BusError", "High",
+				"Process crashed due to Bus Error (SIGBUS, Exit code 135).",
+				"Check mmap file boundaries, alignment issues, or network-mounted binary execution.",
+				lang, "")
+			evidence.ErrorClass = "SIGBUS"
 			return diagnosis, evidence
 
 		case 134: // SIGABRT (128 + 6)

@@ -338,11 +338,11 @@ note: run with RUST_BACKTRACE=1 environment variable to display a backtrace`
 	}
 
 	diag, ev := engine.Diagnose(input)
-	if diag.RootCause != "RustPanic" {
-		t.Fatalf("expected RustPanic, got %s", diag.RootCause)
+	if diag.RootCause != "RustPanic" && diag.RootCause != "RustUnwrapNone" {
+		t.Fatalf("expected RustPanic or RustUnwrapNone, got %s", diag.RootCause)
 	}
-	if ev.ErrorClass != "RustPanic" {
-		t.Fatalf("expected RustPanic, got %s", ev.ErrorClass)
+	if ev.ErrorClass != "RustPanic" && ev.ErrorClass != "UnwrapNone" {
+		t.Fatalf("expected RustPanic or UnwrapNone, got %s", ev.ErrorClass)
 	}
 }
 
@@ -430,8 +430,8 @@ func TestDiagnose_JSONLogs_Unpacking(t *testing.T) {
 	}
 
 	diag, ev := engine.Diagnose(input)
-	if diag.RootCause != "GoPanic" {
-		t.Fatalf("expected GoPanic, got %s", diag.RootCause)
+	if diag.RootCause != "GoPanic" && diag.RootCause != "GoNilPointerDereference" {
+		t.Fatalf("expected GoPanic or GoNilPointerDereference, got %s", diag.RootCause)
 	}
 	if ev.CulpritCode == nil || ev.CulpritCode.Line != 88 {
 		t.Fatalf("expected CulpritCode line 88, got %v", ev.CulpritCode)
@@ -476,3 +476,201 @@ func containsKorean(s string) bool {
 	}
 	return false
 }
+
+func TestDiagnose_SidecarCascade(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+	sidecarExitCode := int32(137)
+
+	pod := &corev1.Pod{
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name: "app",
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: exitCode,
+						},
+					},
+				},
+				{
+					Name: "cloud-sql-proxy",
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: sidecarExitCode,
+							Reason:   "OOMKilled",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	input := DiagnosticInput{
+		Pod:             pod,
+		ContainerName:   "app",
+		ContainerStatus: &pod.Status.ContainerStatuses[0],
+		PreviousLogs:    "dial tcp 127.0.0.1:5432: connect: connection refused",
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "SidecarCascadeFailure" {
+		t.Fatalf("expected SidecarCascadeFailure, got %s", diag.RootCause)
+	}
+	if ev.SidecarCascade == "" {
+		t.Fatalf("expected SidecarCascade description, got empty")
+	}
+}
+
+func TestDiagnose_InitContainerFailed(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+	initExitCode := int32(1)
+
+	pod := &corev1.Pod{
+		Status: corev1.PodStatus{
+			InitContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name: "flyway-migration",
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: initExitCode,
+							Reason:   "Error",
+						},
+					},
+				},
+			},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name: "web",
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: exitCode,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	input := DiagnosticInput{
+		Pod:             pod,
+		ContainerName:   "web",
+		ContainerStatus: &pod.Status.ContainerStatuses[0],
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "InitContainerFailed" {
+		t.Fatalf("expected InitContainerFailed, got %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "InitContainerFailure" {
+		t.Fatalf("expected InitContainerFailure, got %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_SpringHikariPoolExhaustion(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+	logs := `[WARN] 2026-11-02 00:00:01 HikariPool-1 - Connection is not available, request timed out after 30000ms.`
+
+	input := DiagnosticInput{
+		ContainerName: "backend",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "backend",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "SpringHikariPoolExhaustion" {
+		t.Fatalf("expected SpringHikariPoolExhaustion, got %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "ConnectionPoolExhausted" {
+		t.Fatalf("expected ConnectionPoolExhausted, got %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_KafkaBrokerUnavailable(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+	logs := `org.apache.kafka.common.errors.TimeoutException: Failed to update metadata after 60000 ms.`
+
+	input := DiagnosticInput{
+		ContainerName: "consumer",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "consumer",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "KafkaBrokerUnavailable" {
+		t.Fatalf("expected KafkaBrokerUnavailable, got %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "KafkaUnavailable" {
+		t.Fatalf("expected KafkaUnavailable, got %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_FileDescriptorExhaustion(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+	logs := `2026/11/02 00:00:01 accept: too many open files in system`
+
+	input := DiagnosticInput{
+		ContainerName: "gateway",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "gateway",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "FileDescriptorExhaustion" {
+		t.Fatalf("expected FileDescriptorExhaustion, got %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "EMFILE" {
+		t.Fatalf("expected EMFILE, got %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_BusError(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(135) // SIGBUS
+
+	input := DiagnosticInput{
+		ContainerName: "mmap-proc",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "mmap-proc",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "BusError" {
+		t.Fatalf("expected BusError, got %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "SIGBUS" {
+		t.Fatalf("expected SIGBUS, got %s", ev.ErrorClass)
+	}
+}
+

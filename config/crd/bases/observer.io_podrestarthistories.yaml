@@ -120,6 +120,8 @@ spec:
                       type: string
                     lastLogSnippet:
                       type: string
+                    sidecarCascade:
+                      type: string
                 insight:
                   type: object
                   properties:

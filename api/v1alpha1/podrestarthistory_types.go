@@ -42,6 +42,7 @@ type Evidence struct {
 	MatchedEvents     []string     `json:"matchedEvents,omitempty"`
 	MatchedLogPattern string       `json:"matchedLogPattern,omitempty"`
 	LastLogSnippet    string       `json:"lastLogSnippet,omitempty"`
+	SidecarCascade    string       `json:"sidecarCascade,omitempty"`
 }
 
 // ChainStep represents an event or causal step in the failure cascade
