@@ -420,6 +420,106 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "Envoy / Istio 프록시가 가용한 업스트림 엔드포인트를 찾을 수 없습니다.",
 			RecommendedAction: "목적지 파드가 정상 구동 중인지, 서비스 엔드포인트(Endpoints)가 등록되었는지 확인하세요.",
 		},
+		"EnvoyCircuitBreakerOverflow": {
+			SummaryTpl:        "Envoy 서킷 브레이커(UO/최대 커넥션/펜딩 요청 수) 한도를 초과하여 연결이 차단되었습니다.",
+			RecommendedAction: "DestinationRule의 connectionPool maxConnections/maxPendingRequests 한도를 확장하거나 백엔드 파드를 스케일아웃하세요.",
+		},
+		"EnvoyUpstreamConnectionFailure": {
+			SummaryTpl:        "Envoy 프록시가 업스트림 서비스에 TCP/mTLS 연결을 실패했습니다 (UF).",
+			RecommendedAction: "업스트림 서비스의 리슨 포트, 네트워크 정책(NetworkPolicy) 및 mTLS 설정을 확인하세요.",
+		},
+		"EnvoyNoRouteConfigured": {
+			SummaryTpl:        "Envoy 가상 호스트 또는 라우팅 규칙(NR)을 찾을 수 없습니다.",
+			RecommendedAction: "VirtualService 또는 Ingress의 Host 헤더와 라우팅 경로 매칭 설정을 점검하세요.",
+		},
+		"EnvoyTLSHandshakeFailed": {
+			SummaryTpl:        "Envoy 업스트림과의 TLS 핸드셰이크가 실패했습니다 (UC).",
+			RecommendedAction: "DestinationRule의 tls 모드(ISTIO_MUTUAL vs DISABLE)와 대상 포트의 mTLS 지원 여부를 확인하세요.",
+		},
+		"EnvoyUpstreamTimeout": {
+			SummaryTpl:        "Envoy 업스트림 서비스 응답 대기 시간이 초과되었습니다 (UT).",
+			RecommendedAction: "VirtualService의 timeout 설정을 늘리거나 업스트림 애플리케이션의 처리 지연을 최적화하세요.",
+		},
+		"NginxConfigSyntaxError": {
+			SummaryTpl:        "Nginx 설정 파일 문법 오류로 인해 프로세스 기동에 실패했습니다: %s",
+			RecommendedAction: "Ingress-Nginx의 snippet 어노테이션 또는 ConfigMap의 nginx.conf 문법 오탈자를 수정하세요.",
+		},
+		"NginxClientBodySizeExceeded": {
+			SummaryTpl:        "요청 본문(Body) 크기가 Nginx client_max_body_size 한도를 초과했습니다 (413 Request Entity Too Large).",
+			RecommendedAction: "Ingress에 'nginx.ingress.kubernetes.io/proxy-body-size: \"50m\"' 어노테이션을 설정하여 허용 용량을 늘리세요.",
+		},
+		"IstioProxyNotReady": {
+			SummaryTpl:        "Istio 파일럿(Pilot)과의 xDS 동기화 지연 또는 15021 준비 상태 검사(Readiness) 실패.",
+			RecommendedAction: "istiod 컨트롤 플레인 상태 및 istio-proxy 컨테이너의 CPU/메모리 스펙을 확인하세요.",
+		},
+		"IstioStartupRaceCondition": {
+			SummaryTpl:        "istio-proxy 사이드카가 준비 상태(15021)에 도달하기 전 메인 앱이 기동되어 외부 통신에 실패했습니다.",
+			RecommendedAction: "파드 어노테이션에 'proxy.istio.io/config: holdApplicationUntilProxyStarts: true'를 추가하거나 K8s 1.28+ 네이티브 사이드카를 적용하세요.",
+		},
+		"IstioStrictMTLSMismatch": {
+			SummaryTpl:        "Istio STRICT mTLS 네임스페이스에 프록시가 주입되지 않은 평문(Plaintext) 트래픽이 인입되어 거부되었습니다.",
+			RecommendedAction: "클라이언트 파드에 Istio 사이드카를 주입하거나 PeerAuthentication의 mTLS 모드를 PERMISSIVE로 변경하세요.",
+		},
+		"EnvoyGatewayTranslationFailed": {
+			SummaryTpl:        "Envoy Gateway xDS 변환 실패 또는 Gateway API BackendRef 해석 실패 (ResolvedRefs: False).",
+			RecommendedAction: "Gateway API HTTPRoute의 backendRefs 대상 Service 이름 및 네임스페이스 ReferenceGrant를 확인하세요.",
+		},
+		"VaultSealedFailure": {
+			SummaryTpl:        "HashiCorp Vault 인스턴스가 잠김(Sealed) 상태로 Secret을 조회할 수 없습니다 (HTTP 503).",
+			RecommendedAction: "'vault operator unseal' 명령을 실행하여 키 샤드로 Vault 잠금을 해제하세요.",
+		},
+		"VaultTokenExpired": {
+			SummaryTpl:        "Vault 토큰이 만료(Expired)되었거나 서비스 어카운트의 Vault Kube Auth 권한이 거부되었습니다.",
+			RecommendedAction: "Vault 역할(Role)의 token_ttl 및 Kube Auth 바인딩 서비스어카운트 권한을 점검하세요.",
+		},
+		"CoreDNSLoopDetected": {
+			SummaryTpl:        "CoreDNS 루프(Loop) 플러그인이 무한 DNS 포워딩 루프를 감지하고 중단되었습니다.",
+			RecommendedAction: "노드의 /etc/resolv.conf에서 루프백 주소(127.0.0.53/127.0.0.1)를 제거하고 업스트림 퍼블릭 DNS(8.8.8.8)를 지정하세요.",
+		},
+		"CertManagerWebhookFailure": {
+			SummaryTpl:        "Cert-Manager Webhook 서비스 호출 타임아웃 또는 연결 거부로 리소스 검증에 실패했습니다.",
+			RecommendedAction: "cert-manager-webhook 파드의 상태를 확인하고 방화벽/CNI가 10250/6443/webhook 포트를 차단하는지 점검하세요.",
+		},
+		"ACMERateLimitExceeded": {
+			SummaryTpl:        "Let's Encrypt ACME API의 인증서 발급 요청 속도 제한(Rate Limit)을 초과했습니다.",
+			RecommendedAction: "개발/스테이징 환경에서는 ACME Staging Issuer(acme-staging-v02)를 사용하고 만료 30일 전 갱신 주기를 유지하세요.",
+		},
+		"PrometheusWALCorruption": {
+			SummaryTpl:        "Prometheus TSDB WAL(Write-Ahead Log) 파일 손상으로 데이터베이스 복구에 실패했습니다.",
+			RecommendedAction: "Prometheus 파드에 '--storage.tsdb.wal-compression'을 점검하고, 필요 시 손상된 WAL 세그먼트를 제거하거나 PV 볼륨 백업을 복원하세요.",
+		},
+		"PrometheusCardinalityOOM": {
+			SummaryTpl:        "고유 라벨(Cardinality) 폭증으로 인한 Prometheus TSDB 메모리 고갈 (OOMKilled).",
+			RecommendedAction: "고카디널리티 라벨(userId, timestamp, guid 등)을 metric_relabel_configs에서 drop 처리하거나 scrape_interval을 조정하세요.",
+		},
+		"FluentBitBufferExhaustion": {
+			SummaryTpl:        "Fluent Bit 청크 버퍼가 가득 차 신규 로그 인제스천이 중단되었습니다 ([input:tail] ring buffer full / [engine] chunk ... paused).",
+			RecommendedAction: "storage.type을 filesystem으로 전환(배압 디스크 버퍼링)하거나 storage.max_chunks_up 한도를 늘리세요.",
+		},
+		"ElasticsearchDiskFloodStage": {
+			SummaryTpl:        "Elasticsearch 노드 디스크 사용량이 95%%(Flood Stage Watermark)를 초과하여 모든 인덱스가 읽기 전용으로 잠겼습니다.",
+			RecommendedAction: "노드 디스크 용량을 증설하고 오래된 인덱스를 삭제(ILM 정책)한 뒤 'read_only_allow_delete: null'로 인덱스 잠금을 해제하세요.",
+		},
+		"ElasticsearchCircuitBreaker": {
+			SummaryTpl:        "Elasticsearch 메모리 서킷 브레이커([parent]/[fielddata])가 발동하여 쿼리 처리가 차단되었습니다.",
+			RecommendedAction: "ES_JAVA_OPTS 힙 크기를 확장(최대 31GB)하고 indices.breaker.total.use_real_memory 설정을 점검하세요.",
+		},
+		"PatroniLeaderLeaseLost": {
+			SummaryTpl:        "Patroni PostgreSQL이 DCS(etcd/k8s) 리더 임차권(Lease)을 상실하여 Primary에서 강등(Demote)되었습니다.",
+			RecommendedAction: "etcd 클러스터 지연 시간, 쿠버네티스 API 서버 부하 및 patroni lease_duration 설정을 확인하세요.",
+		},
+		"PostgresWALDiskFull": {
+			SummaryTpl:        "PostgreSQL pg_wal 디스크 저장 공간이 고갈되어 쓰기 트랜잭션이 중단되었습니다 (PANIC: could not write to log file).",
+			RecommendedAction: "archive_command 실패 여부 및 복제 슬롯(pg_replication_slots) 지연으로 인한 WAL 잔여분을 확인하고 디스크 볼륨을 확장하세요.",
+		},
+		"ArgoCDRepoServerOOM": {
+			SummaryTpl:        "Argo CD repo-server가 대규모 Helm/Kustomize 템플릿 빌드 중 메모리 한도를 초과하여 OOMKilled되었습니다.",
+			RecommendedAction: "argocd-repo-server의 resources.limits.memory를 증설(최소 2GiB 이상)하고 'ARGOCD_EXEC_TIMEOUT'을 조정하세요.",
+		},
+		"GitRateLimitExceeded": {
+			SummaryTpl:        "GitHub/GitLab 원격 저장소 API 호출 속도 제한(Rate Limit)을 초과했습니다.",
+			RecommendedAction: "Argo CD 설정에 Personal Access Token(PAT) 또는 GitHub App 자격 증명을 등록하여 API 쿼터 한도를 확장하세요.",
+		},
 		"DiskNoSpaceLeft": {
 			SummaryTpl:        "컨테이너 로컬 파일시스템의 저장 공간이 고갈되었습니다 (ENOSPC).",
 			RecommendedAction: "임시 파일을 정리하거나 파드의 ephemeral-storage 할당량을 증설하세요.",
@@ -554,6 +654,110 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "Prisma ORM database error: %s.",
 			RecommendedAction: "Verify Prisma schema mappings and database connectivity.",
 		},
+		"EnvoyNoHealthyUpstream": {
+			SummaryTpl:        "Envoy / Istio proxy cannot find any healthy upstream endpoint (UH flag).",
+			RecommendedAction: "Check target pods health and verify Kubernetes Endpoints registration.",
+		},
+		"EnvoyCircuitBreakerOverflow": {
+			SummaryTpl:        "Envoy circuit breaker connection/request limit exceeded (UO flag).",
+			RecommendedAction: "Increase maxConnections/maxPendingRequests in DestinationRule or scale out backend pods.",
+		},
+		"EnvoyUpstreamConnectionFailure": {
+			SummaryTpl:        "Envoy failed to establish upstream connection or TLS handshake (UF flag).",
+			RecommendedAction: "Verify target port, network policies, and mTLS configuration.",
+		},
+		"EnvoyNoRouteConfigured": {
+			SummaryTpl:        "Envoy could not match route for the request host/path (NR flag).",
+			RecommendedAction: "Verify VirtualService host and URI route matching match the ingress traffic.",
+		},
+		"EnvoyTLSHandshakeFailed": {
+			SummaryTpl:        "Envoy upstream TLS handshake failed or connection reset (UC flag).",
+			RecommendedAction: "Inspect DestinationRule tls settings and upstream certificate validity.",
+		},
+		"EnvoyUpstreamTimeout": {
+			SummaryTpl:        "Envoy upstream request timed out (UT flag).",
+			RecommendedAction: "Increase VirtualService timeout or optimize upstream service latency.",
+		},
+		"NginxConfigSyntaxError": {
+			SummaryTpl:        "Nginx configuration syntax error failed reload or startup: %s.",
+			RecommendedAction: "Fix syntax error in Ingress snippet or ConfigMap nginx.conf.",
+		},
+		"NginxClientBodySizeExceeded": {
+			SummaryTpl:        "Client request body exceeded Nginx client_max_body_size (413 Request Entity Too Large).",
+			RecommendedAction: "Add annotation 'nginx.ingress.kubernetes.io/proxy-body-size: \"50m\"' to your Ingress.",
+		},
+		"IstioProxyNotReady": {
+			SummaryTpl:        "Istio sidecar proxy failed readiness probe on port 15021.",
+			RecommendedAction: "Check istiod control plane health and istio-proxy container CPU/memory limits.",
+		},
+		"IstioStartupRaceCondition": {
+			SummaryTpl:        "Application started and attempted external/DB egress before istio-proxy reached Ready state.",
+			RecommendedAction: "Configure 'proxy.istio.io/config: holdApplicationUntilProxyStarts: true' or adopt K8s 1.28+ native sidecars.",
+		},
+		"IstioStrictMTLSMismatch": {
+			SummaryTpl:        "Plaintext traffic rejected by Istio STRICT mTLS peer authentication policy.",
+			RecommendedAction: "Inject Istio sidecar into caller or set PeerAuthentication mode to PERMISSIVE.",
+		},
+		"EnvoyGatewayTranslationFailed": {
+			SummaryTpl:        "Envoy Gateway xDS translation failed or Gateway API BackendRef unresolved.",
+			RecommendedAction: "Check Gateway API HTTPRoute backendRefs service and ReferenceGrant.",
+		},
+		"VaultSealedFailure": {
+			SummaryTpl:        "HashiCorp Vault instance is sealed (HTTP 503).",
+			RecommendedAction: "Unseal Vault using 'vault operator unseal' with unseal keys.",
+		},
+		"VaultTokenExpired": {
+			SummaryTpl:        "Vault token expired or service account authentication failed.",
+			RecommendedAction: "Renew token or check Vault role token_ttl and Kubernetes Auth binding.",
+		},
+		"CoreDNSLoopDetected": {
+			SummaryTpl:        "CoreDNS loop plugin detected forwarding loop and stopped.",
+			RecommendedAction: "Remove loopback IP (127.0.0.1/127.0.0.53) from node /etc/resolv.conf and set upstream DNS (8.8.8.8).",
+		},
+		"CertManagerWebhookFailure": {
+			SummaryTpl:        "Cert-Manager webhook connection refused or timed out.",
+			RecommendedAction: "Check cert-manager-webhook pod status and verify webhook firewall/CNI port 10250/6443.",
+		},
+		"ACMERateLimitExceeded": {
+			SummaryTpl:        "Let's Encrypt ACME API rate limit exceeded.",
+			RecommendedAction: "Use Let's Encrypt staging environment (acme-staging-v02) for non-production clusters.",
+		},
+		"PrometheusWALCorruption": {
+			SummaryTpl:        "Prometheus TSDB Write-Ahead Log (WAL) corruption detected.",
+			RecommendedAction: "Check disk integrity, enable WAL compression, or restore corrupted segments from backup.",
+		},
+		"PrometheusCardinalityOOM": {
+			SummaryTpl:        "High-cardinality label explosion caused Prometheus TSDB OOMKilled.",
+			RecommendedAction: "Drop high-cardinality labels (userId, timestamps) using metric_relabel_configs.",
+		},
+		"FluentBitBufferExhaustion": {
+			SummaryTpl:        "Fluent Bit ring buffer full or storage chunk paused.",
+			RecommendedAction: "Switch storage.type to filesystem for persistent backpressure buffering.",
+		},
+		"ElasticsearchDiskFloodStage": {
+			SummaryTpl:        "Elasticsearch disk usage exceeded flood stage watermark (95%%); indexes set to read-only.",
+			RecommendedAction: "Expand disk volume, delete stale indices, and reset 'read_only_allow_delete' to null.",
+		},
+		"ElasticsearchCircuitBreaker": {
+			SummaryTpl:        "Elasticsearch memory circuit breaker tripped ([parent]/[fielddata]).",
+			RecommendedAction: "Increase JVM heap (ES_JAVA_OPTS up to 31GB) or optimize memory-heavy queries.",
+		},
+		"PatroniLeaderLeaseLost": {
+			SummaryTpl:        "Patroni lost DCS leader lease and demoted PostgreSQL primary to replica.",
+			RecommendedAction: "Check etcd DCS latency, kube-apiserver load, and patroni lease_duration.",
+		},
+		"PostgresWALDiskFull": {
+			SummaryTpl:        "PostgreSQL pg_wal disk full (PANIC: could not write to log file).",
+			RecommendedAction: "Verify archive_command status, drop inactive replication slots, and enlarge storage volume.",
+		},
+		"ArgoCDRepoServerOOM": {
+			SummaryTpl:        "Argo CD repo-server OOMKilled during large Helm/Kustomize manifest rendering.",
+			RecommendedAction: "Increase memory limit on argocd-repo-server and tune ARGOCD_EXEC_TIMEOUT.",
+		},
+		"GitRateLimitExceeded": {
+			SummaryTpl:        "Git provider API rate limit exceeded.",
+			RecommendedAction: "Configure GitHub App or Personal Access Token (PAT) with higher API quotas.",
+		},
 	},
 }
 
@@ -569,7 +773,19 @@ func Localize(rootCause, lang, defaultSummary, defaultAction, detail string) (st
 		strings.HasPrefix(defaultSummary, "Node.js 비동기") ||
 		strings.HasPrefix(defaultSummary, "Prisma") ||
 		strings.HasPrefix(defaultSummary, "NestJS") ||
-		strings.HasPrefix(defaultSummary, "Express")) {
+		strings.HasPrefix(defaultSummary, "Express") ||
+		strings.HasPrefix(defaultSummary, "Envoy") ||
+		strings.HasPrefix(defaultSummary, "Istio") ||
+		strings.HasPrefix(defaultSummary, "Nginx") ||
+		strings.HasPrefix(defaultSummary, "Vault") ||
+		strings.HasPrefix(defaultSummary, "CoreDNS") ||
+		strings.HasPrefix(defaultSummary, "Cert-Manager") ||
+		strings.HasPrefix(defaultSummary, "Prometheus") ||
+		strings.HasPrefix(defaultSummary, "Fluent Bit") ||
+		strings.HasPrefix(defaultSummary, "Elasticsearch") ||
+		strings.HasPrefix(defaultSummary, "Patroni") ||
+		strings.HasPrefix(defaultSummary, "PostgreSQL") ||
+		strings.HasPrefix(defaultSummary, "Argo CD")) {
 		return defaultSummary, defaultAction
 	}
 	langDict, ok := i18nRegistry[lang]

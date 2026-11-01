@@ -279,5 +279,64 @@ func TestSynthesizer_LazyInitializationException(t *testing.T) {
 	}
 }
 
+func TestSynthesizer_MeshCircuitBreaker(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(0)
+
+	incident := IncidentContext{
+		Namespace:     "production",
+		PodName:       "checkout-service-789",
+		ContainerName: "istio-proxy",
+		ExitCode:      &exitCode,
+		RootCause:     "EnvoyCircuitBreakerOverflow",
+		Category:      "Dependency",
+		Confidence:    "High",
+		ErrorClass:    "Envoy_UO_Flag",
+		Language:      "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 steps, got %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.SuggestedFix, "maxConnections") {
+		t.Fatalf("expected fix to recommend maxConnections, got: %s", result.SuggestedFix)
+	}
+	if !strings.Contains(result.InferredContext, "서킷 브레이커") {
+		t.Fatalf("expected context to mention 서킷 브레이커, got: %s", result.InferredContext)
+	}
+}
+
+func TestSynthesizer_EnterpriseCoreDNSLoop(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(2)
+
+	incident := IncidentContext{
+		Namespace:     "kube-system",
+		PodName:       "coredns-5dd5756b68-xyz",
+		ContainerName: "coredns",
+		ExitCode:      &exitCode,
+		RootCause:     "CoreDNSLoopDetected",
+		Category:      "Infrastructure",
+		Confidence:    "High",
+		ErrorClass:    "CoreDNSLoop",
+		Language:      "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 steps, got %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.SuggestedFix, "127.0.0.53") {
+		t.Fatalf("expected fix to recommend removing 127.0.0.53, got: %s", result.SuggestedFix)
+	}
+}
+
 
 

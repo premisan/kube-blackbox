@@ -1346,6 +1346,70 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 		}
 	}
 
+	// 4. Service Mesh, Ingress & Envoy Deep Analysis
+	meshDeep := knowledge.AnalyzeMeshLogs(processedLogs)
+	if meshDeep != nil {
+		if res == nil || res.MatchedRule == nil {
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "MeshDeepAnalysis_" + meshDeep.Component,
+					Category:          "Dependency",
+					RootCause:         meshDeep.RootCause,
+					Confidence:        "High",
+					RecommendedAction: meshDeep.SuggestedFixKo,
+				},
+				MatchedPattern: "MeshDeepAnalysis_" + meshDeep.Component,
+				Category:       "Dependency",
+				Snippet:        tailSnippet,
+			}
+		} else {
+			res.MatchedRule.RootCause = meshDeep.RootCause
+		}
+		res.ErrorClass = meshDeep.ErrorClass
+		if meshDeep.SummaryKo != "" {
+			res.Summary = meshDeep.SummaryKo
+		}
+		if meshDeep.SuggestedFixKo != "" {
+			res.RecommendedAction = meshDeep.SuggestedFixKo
+		}
+		return res
+	}
+
+	// 5. Enterprise Cloud-Native OSS Deep Analysis
+	entDeep := knowledge.AnalyzeEnterpriseOSSLogs(processedLogs)
+	if entDeep != nil {
+		if res == nil || res.MatchedRule == nil {
+			category := "Infrastructure"
+			if entDeep.Component == "vault" || entDeep.Component == "vault-agent" || entDeep.Component == "cert-manager" {
+				category = "Configuration"
+			} else if entDeep.Component == "patroni" || entDeep.Component == "elasticsearch" || entDeep.Component == "argocd" {
+				category = "Dependency"
+			}
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "EnterpriseOSS_" + entDeep.Component,
+					Category:          category,
+					RootCause:         entDeep.RootCause,
+					Confidence:        "High",
+					RecommendedAction: entDeep.SuggestedFixKo,
+				},
+				MatchedPattern: "EnterpriseOSS_" + entDeep.Component,
+				Category:       category,
+				Snippet:        tailSnippet,
+			}
+		} else {
+			res.MatchedRule.RootCause = entDeep.RootCause
+		}
+		res.ErrorClass = entDeep.ErrorClass
+		if entDeep.SummaryKo != "" {
+			res.Summary = entDeep.SummaryKo
+		}
+		if entDeep.SuggestedFixKo != "" {
+			res.RecommendedAction = entDeep.SuggestedFixKo
+		}
+		return res
+	}
+
 	return res
 }
 

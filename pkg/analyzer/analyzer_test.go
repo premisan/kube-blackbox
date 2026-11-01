@@ -986,6 +986,162 @@ Unique constraint failed on the constraint: 'users_email_key' (P2002)
 	}
 }
 
+func TestDiagnose_MeshEnvoyCircuitBreaker(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(0)
+
+	logs := `[2026-11-02T02:00:00.123Z] "POST /api/v1/orders HTTP/1.1" 503 UO 0 0 1 - "-" "curl/8.0" "order-service.prod:8080" "10.244.1.25:8080" outbound|8080||order-service.prod.svc.cluster.local - 10.244.1.25:8080 10.244.0.12:45678 - default`
+
+	input := DiagnosticInput{
+		ContainerName: "istio-proxy",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "istio-proxy",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "EnvoyCircuitBreakerOverflow" {
+		t.Fatalf("expected EnvoyCircuitBreakerOverflow, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "EnvoyFlag_UO" {
+		t.Fatalf("expected EnvoyFlag_UO, got: %s", ev.ErrorClass)
+	}
+	if !strings.Contains(diag.RecommendedAction, "DestinationRule") {
+		t.Fatalf("expected recommendation to mention DestinationRule, got: %s", diag.RecommendedAction)
+	}
+}
+
+func TestDiagnose_MeshIstioStartupRace(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	now := metav1.Now()
+	// app started at T, proxy started at T+2 and not ready
+	appStartTime := metav1.NewTime(now.Add(-10 * time.Second))
+	proxyStartTime := metav1.NewTime(now.Add(-8 * time.Second))
+
+	input := DiagnosticInput{
+		ContainerName: "main-app",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "main-app",
+			State: corev1.ContainerState{
+				Running: &corev1.ContainerStateRunning{
+					StartedAt: appStartTime,
+				},
+			},
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: "dial tcp 10.96.0.1:443: connect: connection refused\nfatal error connecting to external database",
+		Pod: &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "order-pod",
+				Namespace: "default",
+			},
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{
+					{
+						Name:  "main-app",
+						Ready: false,
+						State: corev1.ContainerState{
+							Running: &corev1.ContainerStateRunning{StartedAt: appStartTime},
+						},
+					},
+					{
+						Name:  "istio-proxy",
+						Ready: false,
+						State: corev1.ContainerState{
+							Running: &corev1.ContainerStateRunning{StartedAt: proxyStartTime},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "IstioStartupRaceCondition" {
+		t.Fatalf("expected IstioStartupRaceCondition, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "StartupRaceCondition" {
+		t.Fatalf("expected StartupRaceCondition, got: %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_EnterpriseVaultSealed(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `[INFO] vault-agent: starting auto-auth
+[ERROR] vault-agent: failed to read secret "secret/data/db": Error making API request.
+URL: GET https://vault.vault.svc:8200/v1/secret/data/db
+Code: 503. Errors:
+* Vault is sealed`
+
+	input := DiagnosticInput{
+		ContainerName: "vault-agent",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "vault-agent",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "VaultSealedFailure" {
+		t.Fatalf("expected VaultSealedFailure, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "VaultSealed_503" {
+		t.Fatalf("expected VaultSealed_503, got: %s", ev.ErrorClass)
+	}
+	if !strings.Contains(diag.RecommendedAction, "vault operator unseal") {
+		t.Fatalf("expected action to mention unseal, got: %s", diag.RecommendedAction)
+	}
+}
+
+func TestDiagnose_EnterpriseCoreDNSLoop(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(2)
+
+	logs := `[INFO] plugin/reload: Running configuration MD5 = 20e7e1f4f89d
+plugin/loop: Loop (127.0.0.1:53 -> :53) detected for zone ".", see https://coredns.io/plugins/loop#troubleshooting.
+CoreDNS is halting to avoid a loop.`
+
+	input := DiagnosticInput{
+		ContainerName: "coredns",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "coredns",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "CoreDNSLoopDetected" {
+		t.Fatalf("expected CoreDNSLoopDetected, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "DNSLoopDetected" {
+		t.Fatalf("expected DNSLoopDetected, got: %s", ev.ErrorClass)
+	}
+}
+
 
 
 

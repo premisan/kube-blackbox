@@ -198,6 +198,15 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 			return diagnosis, evidence
 		}
 
+		if sidecarRes.IsStartupRace {
+			setDiag(&diagnosis, "Dependency", "IstioStartupRaceCondition", "High",
+				fmt.Sprintf("Application container '%s' crashed due to startup race before sidecar '%s' reached Ready state.", input.ContainerName, sidecarRes.SidecarName),
+				fmt.Sprintf("Configure 'holdApplicationUntilProxyStarts: true' or adopt K8s 1.28+ native sidecar containers."),
+				lang, sidecarRes.SidecarName)
+			evidence.ErrorClass = "StartupRaceCondition"
+			return diagnosis, evidence
+		}
+
 		// If connection refused or no logs and sidecar crashed
 		if logRes == nil || logRes.MatchedRule == nil ||
 			logRes.MatchedRule.RootCause == "ConnectionRefused" ||
