@@ -12,6 +12,7 @@ type SidecarAnalysisResult struct {
 	CascadeDetected bool
 	SidecarName     string
 	IsInitContainer bool
+	IsStartupRace   bool
 	Description     string
 }
 
@@ -69,8 +70,8 @@ func AnalyzeSidecarCascade(pod *corev1.Pod, currentContainerName string, current
 			detail = fmt.Sprintf("restarted %d times and is not Ready", cs.RestartCount)
 		}
 
+		isKnownSidecar := isProxyOrSidecar(cs.Name)
 		if isAbnormal {
-			isKnownSidecar := isProxyOrSidecar(cs.Name)
 			if hasLocalhostRefusal || isKnownSidecar {
 				return &SidecarAnalysisResult{
 					CascadeDetected: true,
@@ -78,6 +79,17 @@ func AnalyzeSidecarCascade(pod *corev1.Pod, currentContainerName string, current
 					IsInitContainer: false,
 					Description:     fmt.Sprintf("Sidecar/peer '%s' %s, cascading failure into '%s'", cs.Name, detail, currentContainerName),
 				}
+			}
+		}
+
+		// Startup race condition check: main container crashed due to connection refusal while sidecar was not yet Ready
+		if isKnownSidecar && (hasLocalhostRefusal || strings.Contains(lowerLogs, "15021")) && !cs.Ready {
+			return &SidecarAnalysisResult{
+				CascadeDetected: true,
+				SidecarName:     cs.Name,
+				IsInitContainer: false,
+				IsStartupRace:   true,
+				Description:     fmt.Sprintf("Startup Race Condition: main container '%s' initiated network connections before sidecar '%s' reached Ready status", currentContainerName, cs.Name),
 			}
 		}
 	}
