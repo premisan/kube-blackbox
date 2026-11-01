@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-clickhouse-queries
+  labels:
+    app: sample-clickhouse-queries
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: analytics-service
+      image: node:18-alpine
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Node.js analytics worker dispatching concurrent aggregation queries..."
+          cat << 'EOF' >&2
+2026-11-02T02:40:00.567Z [ClickHouseClient] Query execution error:
+Code: 202. DB::Exception: Too many simultaneous queries. Maximum: 100. (TOO_MANY_SIMULTANEOUS_QUERIES) (version 24.3.1.2672)
+    at ClickHouseClient.query (/app/node_modules/@clickhouse/client/dist/index.js:145:12)
+    at Aggregator.runMetricCalculation (/app/src/aggregator.ts:72:25)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+EOF
+          echo "[FATAL] ClickHouse query submission rejected due to max_concurrent_queries saturation. Process crashing." >&2
+          exit 1
