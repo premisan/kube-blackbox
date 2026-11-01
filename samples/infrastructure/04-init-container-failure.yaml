@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-init-container-failure
+  labels:
+    app: sample-init-container-failure
+    category: infrastructure
+spec:
+  restartPolicy: Always
+  initContainers:
+    - name: db-schema-migration
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Running database schema migration before app startup..."
+          sleep 2
+          echo "[ERROR] Migration failed: unable to apply V4__create_orders.sql: connection timed out" >&2
+          echo "[FATAL] Init container exiting with non-zero exit code" >&2
+          exit 1
+  containers:
+    - name: main-application
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Main application starting..."
+          sleep 3600

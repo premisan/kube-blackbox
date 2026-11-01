@@ -26,7 +26,7 @@ install-crd:
 	kubectl apply -f config/crd/bases/observer.io_podrestarthistories.yaml
 
 deploy-samples:
-	kubectl apply -f samples/
+	kubectl apply -R -f samples/
 
 delete-samples:
-	kubectl delete -f samples/ --ignore-not-found
+	kubectl delete -R -f samples/ --ignore-not-found

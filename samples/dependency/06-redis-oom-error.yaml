@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-redis-oom
+  labels:
+    app: sample-redis-oom
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: cache-worker
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Worker processing cache persistence queue..."
+          sleep 2
+          echo "[INFO] Executing SETEX cache:session:usr_9482 3600 <payload>..."
+          echo "[ERROR] Redis command rejected: OOM command not allowed when used memory > 'maxmemory'" >&2
+          echo "[FATAL] Redis cache cluster exhausted. Application halting." >&2
+          exit 1

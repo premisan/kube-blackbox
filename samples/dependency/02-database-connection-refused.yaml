@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-db-connection-refused
+  labels:
+    app: sample-db-connection-refused
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: api-server
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Establishing TCP connection to internal MySQL cluster at 10.96.45.12:3306..."
+          sleep 2
+          echo "[ERROR] dial tcp 10.96.45.12:3306: connect: connection refused" >&2
+          echo "[FATAL] Target database endpoint unreachable after retry budget exhausted." >&2
+          exit 1

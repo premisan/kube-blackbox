@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-entrypoint-not-found
+  labels:
+    app: sample-entrypoint-not-found
+    category: configuration
+spec:
+  restartPolicy: Always
+  containers:
+    - name: missing-binary-app
+      image: busybox:latest
+      command: ["/opt/bin/nonexistent-service-daemon"]

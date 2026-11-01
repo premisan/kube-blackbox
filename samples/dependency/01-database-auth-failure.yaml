@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-db-auth-failure
+  labels:
+    app: sample-db-auth-failure
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: db-client
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Connecting to postgresql://db-service.production.svc:5432/appdb..."
+          sleep 2
+          echo "[ERROR] org.postgresql.util.PSQLException: FATAL: password authentication failed for user \"service_worker\"" >&2
+          echo "[FATAL] Unable to establish database connection pool with provided credentials. Terminating." >&2
+          exit 1

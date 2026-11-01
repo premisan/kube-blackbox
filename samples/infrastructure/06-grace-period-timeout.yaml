@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-grace-period-timeout
+  labels:
+    app: sample-grace-period-timeout
+    category: infrastructure
+spec:
+  terminationGracePeriodSeconds: 10
+  restartPolicy: Always
+  containers:
+    - name: stubborn-worker
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          # Trap SIGTERM to simulate unhandled shutdown hooks or hanging cleanup routines
+          trap 'echo "[WARN] SIGTERM received! Running blocking shutdown task (simulating deadlock)..."; sleep 30; echo "[INFO] Cleanup finished"' TERM
+          echo "[INFO] Worker started with 10-second terminationGracePeriodSeconds..."
+          while true; do
+            sleep 1
+          done

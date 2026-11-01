@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-exec-format-error
+  labels:
+    app: sample-exec-format-error
+    category: configuration
+spec:
+  restartPolicy: Always
+  containers:
+    - name: mismatched-arch-app
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Attempting to spawn compiled native binary..."
+          sleep 2
+          echo "/bin/sh: /usr/local/bin/legacy-daemon: cannot execute binary file: Exec format error" >&2
+          exit 126

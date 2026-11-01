@@ -4,6 +4,7 @@ metadata:
   name: sample-python-crash
   labels:
     app: sample-python-crash
+    category: application
 spec:
   restartPolicy: Always
   containers:

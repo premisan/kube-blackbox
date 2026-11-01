@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-nonroot-violation
+  labels:
+    app: sample-nonroot-violation
+    category: configuration
+spec:
+  restartPolicy: Always
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+  containers:
+    - name: nonroot-app
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Running as non-root user (UID: $(id -u))..."
+          sleep 2
+          echo "[INFO] Attempting to write runtime state to protected /etc/secure_token.key..."
+          touch /etc/secure_token.key

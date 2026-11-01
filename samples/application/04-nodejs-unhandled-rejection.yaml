@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-nodejs-crash
+  labels:
+    app: sample-nodejs-crash
+    category: application
+spec:
+  restartPolicy: Always
+  containers:
+    - name: nodejs-api
+      image: node:18-alpine
+      command: ["node", "-e"]
+      args:
+        - |
+          console.log("[INFO] Node.js order processing API initialized");
+          setTimeout(() => {
+            console.log("[INFO] Processing order batch event...");
+            function processOrder(order) {
+              return order.customer.customer_id;
+            }
+            try {
+              processOrder({ id: "ORD-9876" });
+            } catch (err) {
+              console.error("TypeError: Cannot read properties of undefined (reading 'customer_id')");
+              console.error("    at processOrder (/app/order_service.js:84:22)");
+              console.error("    at Timeout._onTimeout (/app/server.js:42:15)");
+              process.exit(1);
+            }
+          }, 2000);

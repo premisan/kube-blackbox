@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-cpu-throttling-liveness
+  labels:
+    app: sample-cpu-throttling-liveness
+    category: infrastructure
+spec:
+  restartPolicy: Always
+  containers:
+    - name: throttled-worker
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          touch /tmp/healthy
+          echo "[INFO] Container started with restrictive CPU limit (50m)..."
+          # Run background compute task simulating high CPU load leading to CFS throttling
+          (while true; do :; done) &
+          sleep 6
+          echo "[WARN] Removing healthy token under severe CPU throttling..."
+          rm -rf /tmp/healthy
+          sleep 600
+      resources:
+        limits:
+          cpu: "50m"
+          memory: "64Mi"
+        requests:
+          cpu: "20m"
+          memory: "32Mi"
+      livenessProbe:
+        exec:
+          command:
+            - cat
+            - /tmp/healthy
+        initialDelaySeconds: 2
+        periodSeconds: 3
+        failureThreshold: 2

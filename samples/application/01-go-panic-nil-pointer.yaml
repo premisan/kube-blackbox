@@ -1,13 +1,14 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: sample-app-panic
+  name: sample-go-panic
   labels:
-    app: sample-app-panic
+    app: sample-go-panic
+    category: application
 spec:
   restartPolicy: Always
   containers:
-    - name: backend-service
+    - name: payment-service
       image: busybox:latest
       command: ["/bin/sh", "-c"]
       args:

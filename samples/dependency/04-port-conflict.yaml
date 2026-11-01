@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-port-conflict
+  labels:
+    app: sample-port-conflict
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: port-clash-service
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Starting background auxiliary service on port 8080..."
+          nc -l -p 8080 &
+          sleep 1
+          echo "[INFO] Starting primary HTTP server on port 8080..."
+          echo "[ERROR] Failed to start HTTP server: listen tcp :8080: bind: address already in use" >&2
+          exit 1

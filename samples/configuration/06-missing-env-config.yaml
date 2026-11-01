@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-missing-env
+  labels:
+    app: sample-missing-env
+    category: configuration
+spec:
+  restartPolicy: Always
+  containers:
+    - name: config-checker
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Validating required application environment variables..."
+          sleep 2
+          if [ -z "$DATABASE_URL" ]; then
+            echo "[FATAL] Configuration error: Required environment variable DATABASE_URL is not set!" >&2
+            echo "[FATAL] Application bootstrap failed. Exiting immediately." >&2
+            exit 1
+          fi
+          echo "[INFO] All configurations verified. Starting service..."
+          sleep 3600

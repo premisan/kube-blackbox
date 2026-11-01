@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-rust-panic
+  labels:
+    app: sample-rust-panic
+    category: application
+spec:
+  restartPolicy: Always
+  containers:
+    - name: rust-indexer
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Initializing Rust high-performance event pipeline..."
+          sleep 2
+          echo "[INFO] Polling telemetry queue topic..."
+          sleep 2
+          echo "thread 'main' panicked at 'called \`Option::unwrap()\` on a \`None\` value', src/indexer/pipeline.rs:142:31" >&2
+          echo "note: run with \`RUST_BACKTRACE=1\` environment variable to display a backtrace" >&2
+          exit 101

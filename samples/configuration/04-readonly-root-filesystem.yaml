@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-readonly-rootfs
+  labels:
+    app: sample-readonly-rootfs
+    category: configuration
+spec:
+  restartPolicy: Always
+  containers:
+    - name: readonly-violator
+      image: busybox:latest
+      securityContext:
+        readOnlyRootFilesystem: true
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Container booted with readOnlyRootFilesystem=true constraint"
+          sleep 2
+          echo "[INFO] Attempting to create lock file in root filesystem (/var/run/app.pid)..."
+          # This write operation fails because root filesystem is mounted read-only
+          mkdir -p /var/run && touch /var/run/app.pid

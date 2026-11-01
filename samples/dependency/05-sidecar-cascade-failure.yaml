@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-sidecar-cascade
+  labels:
+    app: sample-sidecar-cascade
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: auth-proxy
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Starting authentication sidecar proxy on 127.0.0.1:9000..."
+          sleep 2
+          echo "[FATAL] Auth sidecar configuration invalid or license expired!" >&2
+          exit 1
+    - name: app-service
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Application service booting up..."
+          sleep 4
+          echo "[INFO] Connecting to local auth sidecar at 127.0.0.1:9000..."
+          echo "[ERROR] dial tcp 127.0.0.1:9000: connect: connection refused" >&2
+          echo "[FATAL] Local proxy unreachable, cannot validate incoming requests. Terminating." >&2
+          exit 1

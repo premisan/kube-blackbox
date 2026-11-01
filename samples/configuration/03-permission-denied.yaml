@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-permission-denied
+  labels:
+    app: sample-permission-denied
+    category: configuration
+spec:
+  restartPolicy: Always
+  containers:
+    - name: restricted-runner
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Preparing application startup script..."
+          echo '#!/bin/sh' > /tmp/launch.sh
+          echo 'echo "Started"' >> /tmp/launch.sh
+          # Deliberately revoke execution permissions
+          chmod 600 /tmp/launch.sh
+          echo "[INFO] Executing /tmp/launch.sh without execute permissions..."
+          /tmp/launch.sh

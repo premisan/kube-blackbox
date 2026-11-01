@@ -84,12 +84,11 @@ kube-blackbox/
 │       ├── synthesizer.go
 │       ├── synthesizer_test.go
 │       └── types.go
-├── samples/                                    # 테스트용 재시작 샘플 파드 5종
-│   ├── 01-oomkilled.yaml                       # OOMKilled 유발
-│   ├── 02-liveness-probe-failure.yaml          # Liveness Probe 실패 유발
-│   ├── 03-app-panic.yaml                       # Go 런타임 패닉 크래시 유발
-│   ├── 04-python-crash.yaml                    # Python 미처리 예외(Unhandled Exception) 유발
-│   └── 05-java-crash.yaml                      # JVM 힙 메모리 고갈(OutOfMemoryError) 유발
+├── samples/                                    # 테스트용 재시작 샘플 파드 (4개 카테고리 24종)
+│   ├── infrastructure/                         # 인프라, cgroup OOM, 프로브, 초기화 장애 6종
+│   ├── application/                            # Go, Python, Java, Node.js, Rust, C++ 런타임 6종
+│   ├── configuration/                          # 아키텍처, 권한, ReadOnlyFS, 환경설정 6종
+│   └── dependency/                             # DB 인증, 연결 거부, Kafka, 포트 충돌, 사이드카 6종
 ├── .dockerignore
 ├── Dockerfile
 ├── Makefile
@@ -176,8 +175,8 @@ docker buildx build --platform linux/amd64,linux/arm64 -t premisan0/kube-blackbo
 
 ### 1) 샘플 파드 전체 한 번에 배포
 ```bash
-# 5가지 장애 시나리오 파드 전체 배포 (OOM, Probe 실패, Go Panic, Python 예외, Java Heap OOM)
-kubectl apply -f samples/
+# 전체 샘플 파드 재귀 배포 (또는 특정 카테고리별: kubectl apply -f samples/application/)
+kubectl apply -R -f samples/
 # 또는 Makefile 이용:
 # make deploy-samples
 ```
@@ -248,7 +247,7 @@ Status:
 
 ```bash
 # 샘플 파드 전체 한 번에 삭제
-kubectl delete -f samples/ --ignore-not-found
+kubectl delete -R -f samples/ --ignore-not-found
 # 또는 Makefile 이용:
 # make delete-samples
 

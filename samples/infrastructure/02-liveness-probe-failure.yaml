@@ -4,6 +4,7 @@ metadata:
   name: sample-liveness-failure
   labels:
     app: sample-liveness-failure
+    category: infrastructure
 spec:
   restartPolicy: Always
   containers:

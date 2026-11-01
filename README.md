@@ -84,12 +84,11 @@ kube-blackbox/
 │       ├── synthesizer.go
 │       ├── synthesizer_test.go
 │       └── types.go
-├── samples/                                    # Sample crash pods for testing
-│   ├── 01-oomkilled.yaml                       # Triggers cgroup OOMKilled
-│   ├── 02-liveness-probe-failure.yaml          # Triggers Liveness Probe failure
-│   ├── 03-app-panic.yaml                       # Triggers Go runtime panic
-│   ├── 04-python-crash.yaml                    # Triggers Python unhandled exception
-│   └── 05-java-crash.yaml                      # Triggers JVM heap OutOfMemoryError
+├── samples/                                    # Sample crash pods for testing (24 samples across 4 categories)
+│   ├── infrastructure/                         # Infrastructure, cgroup OOM, probe, init failures (6 samples)
+│   ├── application/                            # Go, Python, Java, Node.js, Rust, C++ runtimes (6 samples)
+│   ├── configuration/                          # Architecture, permissions, ReadOnlyFS, config (6 samples)
+│   └── dependency/                             # DB auth, connection refused, Kafka, port clash, sidecar (6 samples)
 ├── .dockerignore
 ├── Dockerfile
 ├── Makefile
@@ -176,8 +175,8 @@ Deploy the test sample pods all at once to verify multi-language and infrastruct
 
 ### 1) Deploy All Sample Pods at Once
 ```bash
-# Deploys all 5 failure test pods (OOM, Probe Failure, Go Panic, Python Exception, Java Heap OOM)
-kubectl apply -f samples/
+# Recursively deploy all sample test pods (or by category: kubectl apply -f samples/application/)
+kubectl apply -R -f samples/
 # Or using Makefile:
 # make deploy-samples
 ```
@@ -247,8 +246,8 @@ Status:
 ## 6. Cleanup
 
 ```bash
-# Remove all sample pods
-kubectl delete -f samples/ --ignore-not-found
+# Remove all sample pods recursively
+kubectl delete -R -f samples/ --ignore-not-found
 # Or via Makefile:
 # make delete-samples
 

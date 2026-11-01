@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-kafka-broker-unavailable
+  labels:
+    app: sample-kafka-broker-unavailable
+    category: dependency
+spec:
+  restartPolicy: Always
+  containers:
+    - name: event-streamer
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Initializing Kafka consumer group 'payment-auditor'..."
+          sleep 2
+          echo "[ERROR] org.apache.kafka.common.errors.TimeoutException: Failed to update metadata after 60000 ms." >&2
+          echo "[WARN] Broker: Leader not available for partition payment-events-0" >&2
+          echo "[FATAL] Cannot discover partition leader for critical event stream. Terminating." >&2
+          exit 1
