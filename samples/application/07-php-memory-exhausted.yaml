@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-php-memory-exhausted
+  labels:
+    app: sample-php-memory-exhausted
+    category: application
+spec:
+  restartPolicy: Always
+  containers:
+    - name: php-api
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[2026-11-02 03:00:10 UTC] [INFO] Starting Laravel API worker..."
+          sleep 3
+          echo "[2026-11-02 03:00:13 UTC] [INFO] Generating monthly financial report..."
+          sleep 2
+          echo "[2026-11-02 03:00:15 UTC] PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 20480 bytes) in /var/www/html/app/Services/ReportGenerator.php on line 245" >&2
+          exit 255

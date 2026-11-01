@@ -1,6 +1,6 @@
 # Kube-Blackbox Failure Simulation Samples
 
-이 디렉토리는 `kube-blackbox`의 다차원 진단 엔진과 원인 사슬(Root Cause Chain) 합성을 검증하기 위한 **42종의 카테고리별 실전 재시작 샘플 파드**를 제공합니다.
+이 디렉토리는 `kube-blackbox`의 다차원 진단 엔진과 원인 사슬(Root Cause Chain) 합성을 검증하기 위한 **44종의 카테고리별 실전 재시작 샘플 파드**를 제공합니다.
 
 모든 샘플 파드는 쿠버네티스 표준 공식 경량 이미지(`busybox`, `alpine`, `python:3.11-alpine`, `node:18-alpine`, `amazoncorretto:17-alpine`)를 사용하며, 실제 운영 환경에서 발생하는 장애 시나리오를 재현합니다.
 
@@ -23,7 +23,7 @@
 | `08-nfs-access-denied.yaml` | `sample-nfs-access-denied` | `NFSMountAccessDenied` | NFS 서버 익스포트 디렉토리 마운트 권한 거부(`mount.nfs: access denied`) |
 
 ### 2. `samples/application/` (애플리케이션 및 런타임 크래시)
-다양한 언어 런타임(Go, Python, Java, Node.js, Rust, C/C++)의 메모리/예외/패닉 오류를 다룹니다.
+다양한 언어 런타임(Go, Python, Java, Node.js, Rust, C/C++, PHP)의 메모리/예외/패닉 오류를 다룹니다.
 
 | 파일명 | 파드명 | 진단 원인 (Root Cause) | 주요 시나리오 |
 | :--- | :--- | :--- | :--- |
@@ -33,6 +33,8 @@
 | `04-nodejs-unhandled-rejection.yaml` | `sample-nodejs-crash` | `NodeTypeError` | Node.js `TypeError: Cannot read properties of undefined` 오류 |
 | `05-rust-panic-unwrap.yaml` | `sample-rust-panic` | `RustUnwrapNone` | Rust `Option::unwrap()` on `None` 패닉 및 파일/라인 추적 |
 | `06-c-segfault.yaml` | `sample-c-segfault` | `SegmentationFault` | C/C++ 네이티브 메모리 침범으로 인한 세그멘테이션 오류 (SIGSEGV, Exit 139) |
+| `07-php-memory-exhausted.yaml` | `sample-php-memory-exhausted` | `PHPMemoryLimitExceeded` | PHP CLI/Laravel 대용량 처리 중 `memory_limit` (128M) 고갈 및 Fatal error |
+| `08-php-fpm-max-children.yaml` | `sample-php-fpm-max-children` | `PHPFPMChildrenExhausted` | PHP-FPM FastCGI 워커 풀 `pm.max_children` 한도 도달 및 연결 거절 |
 
 ### 3. `samples/configuration/` (설정, 웹서버 문법, 정책 및 보안 컨텍스트 오류)
 컨테이너 이미지 아키텍처, 엔트리포인트, 파일 권한, Nginx 문법 오류, Kyverno 정책 차단, SecurityContext 제약 조건을 다룹니다.
