@@ -196,18 +196,22 @@ func (r *PodReconciler) triggerSynthesis(
 	}
 
 	inc := synthesizer.IncidentContext{
-		Namespace:         namespace,
-		PodName:           pod.Name,
-		ContainerName:     cs.Name,
-		ExitCode:          evidence.ExitCode,
-		TerminationReason: evidence.TerminationReason,
-		Category:          diagnosis.Category,
-		RootCause:         diagnosis.RootCause,
-		Confidence:        diagnosis.Confidence,
-		MatchedEvents:     matchedEvStrings,
-		LastLogs:          logs,
-		Language:          lang,
-		CulpritCode:       evidence.CulpritCode,
+		Namespace:                 namespace,
+		PodName:                   pod.Name,
+		ContainerName:             cs.Name,
+		ExitCode:                  evidence.ExitCode,
+		TerminationReason:         evidence.TerminationReason,
+		Category:                  diagnosis.Category,
+		RootCause:                 diagnosis.RootCause,
+		Confidence:                diagnosis.Confidence,
+		MatchedEvents:             matchedEvStrings,
+		LastLogs:                  logs,
+		Language:                  lang,
+		CulpritCode:               evidence.CulpritCode,
+		UptimeSeconds:             evidence.UptimeSeconds,
+		GracePeriodExceeded:       evidence.GracePeriodExceeded,
+		ResourceConstraints:       evidence.ResourceConstraints,
+		SecurityContextViolations: evidence.SecurityContextViolations,
 	}
 
 	res, err := r.Synthesizer.Synthesize(ctx, inc)

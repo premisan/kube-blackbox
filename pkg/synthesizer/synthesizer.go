@@ -65,6 +65,22 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 
 	if lang == "ko" {
 		switch inc.RootCause {
+		case "GracefulShutdownTimeout":
+			steps = append(steps, "쿠버네티스가 파드 종료 또는 롤링 업데이트를 시작하고 프로세스에 SIGTERM(143) 신호를 전달함")
+			steps = append(steps, "애플리케이션이 진행 중인 요청 처리 또는 커넥션 정리를 terminationGracePeriodSeconds 동안 완료하지 못함")
+			steps = append(steps, fmt.Sprintf("Kubelet의 종료 유예 타이머가 만료되어 Linux 커널이 프로세스를 SIGKILL(Exit code %s)로 강제 사살함", exitCodeStr))
+		case "ReadOnlyRootFilesystem", "ReadOnlyFilesystemError":
+			steps = append(steps, "파드 SecurityContext에 readOnlyRootFilesystem: true 보안 제약이 활성화됨")
+			steps = append(steps, "애플리케이션 또는 서드파티 라이브러리가 로컬 루트 파일시스템 디렉토리에 쓰기를 시도함")
+			steps = append(steps, "OS 커널이 EROFS(Read-only file system) 오류를 반환하며 기동 또는 처리가 중단됨")
+		case "HeapCorruption":
+			steps = append(steps, "네이티브 C/C++ 확장 모듈 또는 JNI/CGO에서 메모리 할당/해제 작업이 수행됨")
+			steps = append(steps, "이미 해제된 메모리의 재해제(Double Free) 또는 힙 경계 침범으로 메모리 오염이 발생함")
+			steps = append(steps, "glibc 메모리 할당자가 손상을 감지하고 안전을 위해 SIGABRT(134) 신호로 프로세스를 즉시 강제 종료함")
+		case "NodeV8FatalError":
+			steps = append(steps, "Node.js V8 자바스크립트 엔진의 힙 메모리 사용량이 한계(max-old-space-size)에 도달함")
+			steps = append(steps, "V8 가비지 컬렉터가 신규 메모리 할당 요청을 처리하지 못함")
+			steps = append(steps, "치명적 오류(FATAL ERROR: JavaScript heap out of memory)가 발생하며 런타임이 비정상 종료됨")
 		case "SidecarCascadeFailure":
 			steps = append(steps, "파드 내 사이드카 또는 프록시 컨테이너에 장애 또는 재시작이 발생함")
 			steps = append(steps, "메인 애플리케이션의 로컬호스트(127.0.0.1) 또는 종속성 연결이 거부됨")
@@ -210,6 +226,22 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 	} else {
 		// English
 		switch inc.RootCause {
+		case "GracefulShutdownTimeout":
+			steps = append(steps, "Kubernetes initiated pod termination and delivered SIGTERM (143) to container")
+			steps = append(steps, "Application failed to drain connections and shut down within terminationGracePeriodSeconds")
+			steps = append(steps, fmt.Sprintf("Kubelet grace timer expired and Linux kernel killed process with SIGKILL (Exit code %s)", exitCodeStr))
+		case "ReadOnlyRootFilesystem", "ReadOnlyFilesystemError":
+			steps = append(steps, "Pod securityContext enforced readOnlyRootFilesystem: true")
+			steps = append(steps, "Application or runtime attempted write operations to read-only container root")
+			steps = append(steps, "Kernel returned EROFS (Read-only file system) halting execution")
+		case "HeapCorruption":
+			steps = append(steps, "Dynamic memory operations executed in native C/C++ module or JNI/CGO binding")
+			steps = append(steps, "Double free or heap chunk boundary corruption occurred")
+			steps = append(steps, "glibc allocator detected memory corruption and aborted with SIGABRT (Exit code 134)")
+		case "NodeV8FatalError":
+			steps = append(steps, "Node.js V8 JavaScript heap allocation reached --max-old-space-size ceiling")
+			steps = append(steps, "V8 garbage collector failed to reclaim sufficient memory")
+			steps = append(steps, "FATAL ERROR: JavaScript heap out of memory triggered immediate termination")
 		case "SidecarCascadeFailure":
 			steps = append(steps, "A peer sidecar or proxy container in the pod crashed or entered unready state")
 			steps = append(steps, "Localhost (127.0.0.1) or dependent service connection was refused")
@@ -284,6 +316,14 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 
 	if lang == "ko" {
 		switch inc.RootCause {
+		case "GracefulShutdownTimeout":
+			return "배포 롤아웃 또는 노드 유지보수 중 SIGTERM 수신 후 종료 유예시간(terminationGracePeriodSeconds) 내에 연결 드레인을 완료하지 못해 Kubelet에 의해 SIGKILL(137)로 강제 사살되었습니다."
+		case "ReadOnlyRootFilesystem", "ReadOnlyFilesystemError":
+			return "파드 SecurityContext의 readOnlyRootFilesystem 제약 상태에서 임시 디렉토리 쓰기를 시도하다 EROFS 오류로 중단되었습니다."
+		case "HeapCorruption":
+			return fmt.Sprintf("C/C++ 네이티브 또는 JNI/CGO 라이브러리에서 Double Free 또는 메모리 오염(Heap Corruption)으로 인해 프로세스가 중단되었습니다%s.", culpritStr)
+		case "NodeV8FatalError":
+			return "Node.js V8 런타임의 힙 메모리가 max-old-space-size 한도를 초과하여 치명적 OOM 오류로 프로세스가 중단되었습니다."
 		case "SidecarCascadeFailure":
 			return "동일 파드 내 사이드카(Istio/Envoy, Vault, Cloud SQL Proxy 등)의 중단으로 인해 로컬호스트 통신이 단절되어 메인 컨테이너가 연쇄 실패했습니다."
 		case "InitContainerFailed":
@@ -343,6 +383,14 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 
 	// English default
 	switch inc.RootCause {
+	case "GracefulShutdownTimeout":
+		return "Process exceeded terminationGracePeriodSeconds after SIGTERM and was forcefully killed with SIGKILL (137)."
+	case "ReadOnlyRootFilesystem", "ReadOnlyFilesystemError":
+		return "Process crashed attempting write operations under readOnlyRootFilesystem securityContext policy."
+	case "HeapCorruption":
+		return fmt.Sprintf("Fatal glibc heap corruption (Double free or pointer error) encountered in native library%s.", culpritStr)
+	case "NodeV8FatalError":
+		return "Node.js V8 JavaScript engine heap limit exceeded resulting in fatal OOM crash."
 	case "SidecarCascadeFailure":
 		return "A peer sidecar container (Istio, Vault, Proxy) crashed or was unready, breaking localhost communication."
 	case "InitContainerFailed":
@@ -367,6 +415,14 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 func buildSuggestedFix(inc IncidentContext, lang string) string {
 	if lang == "ko" {
 		switch inc.RootCause {
+		case "GracefulShutdownTimeout":
+			return "1) SIGTERM 신호 수신 시 활성 커넥션 및 큐 작업을 신속히 정리하도록 타임아웃을 설정하세요. 2) 파드 spec.terminationGracePeriodSeconds(기본 30초)를 늘려 안전한 드레인 시간을 확보하세요."
+		case "ReadOnlyRootFilesystem", "ReadOnlyFilesystemError":
+			return "1) 파드 securityContext.readOnlyRootFilesystem 설정을 확인하세요. 2) 애플리케이션이 임시 파일이나 캐시를 작성하는 디렉토리(/tmp, /var/log 등)에 emptyDir 볼륨을 마운트하세요."
+		case "HeapCorruption":
+			return "1) C/C++ 네이티브 라이브러리 및 JNI/CGO 코드의 메모리 할당/해제 로직을 점검하세요. 2) AddressSanitizer(ASan) 또는 Valgrind로 힙 손상 지점을 추적하세요."
+		case "NodeV8FatalError":
+			return "1) 컨테이너 환경변수에 NODE_OPTIONS=\"--max-old-space-size=4096\"을 설정하여 V8 힙을 확장하세요. 2) 전역 캐시 배열 누수를 점검하세요."
 		case "SidecarCascadeFailure":
 			return "1) 파드 내 사이드카 컨테이너(istio-proxy, cloud-sql-proxy, vault-agent 등)의 로그 및 종료 상태를 확인하세요. 2) 쿠버네티스 1.28+ 네이티브 사이드카(restartPolicy: Always)를 적용하여 초기화 순서를 보장하세요."
 		case "InitContainerFailed":
@@ -435,6 +491,14 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 
 	// English default
 	switch inc.RootCause {
+	case "GracefulShutdownTimeout":
+		return "1) Optimize SIGTERM handler to drain connections faster. 2) Increase terminationGracePeriodSeconds in pod spec (default 30s) to allow adequate drain time."
+	case "ReadOnlyRootFilesystem", "ReadOnlyFilesystemError":
+		return "1) Inspect readOnlyRootFilesystem in pod securityContext. 2) Mount emptyDir volumes for writable locations such as /tmp."
+	case "HeapCorruption":
+		return "1) Inspect native C/C++ extensions or JNI/CGO memory management. 2) Debug double free / memory overwrites using AddressSanitizer (ASan)."
+	case "NodeV8FatalError":
+		return "1) Increase '--max-old-space-size' in NODE_OPTIONS. 2) Profile heap snapshots for unbounded object caching leaks."
 	case "SidecarCascadeFailure":
 		return "1) Check logs of peer sidecars (istio-proxy, proxy). 2) Adopt K8s 1.28+ native sidecar containers to guarantee startup ordering."
 	case "InitContainerFailed":

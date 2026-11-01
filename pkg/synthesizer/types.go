@@ -9,18 +9,22 @@ var SupportedLanguages = []string{"ko", "en"}
 
 // IncidentContext bundles all verified facts, logs, and metadata for causal analysis
 type IncidentContext struct {
-	Namespace         string
-	PodName           string
-	ContainerName     string
-	ExitCode          *int32
-	TerminationReason string
-	Category          string
-	RootCause         string
-	Confidence        string
-	MatchedEvents     []string
-	LastLogs          string
-	Language          string // Requested language: "ko", "en"
-	CulpritCode       *observerv1alpha1.CulpritCode
+	Namespace                 string
+	PodName                   string
+	ContainerName             string
+	ExitCode                  *int32
+	TerminationReason         string
+	Category                  string
+	RootCause                 string
+	Confidence                string
+	MatchedEvents             []string
+	LastLogs                  string
+	Language                  string // Requested language: "ko", "en"
+	CulpritCode               *observerv1alpha1.CulpritCode
+	UptimeSeconds             *int64
+	GracePeriodExceeded       bool
+	ResourceConstraints       string
+	SecurityContextViolations string
 }
 
 // InsightResult is the structured diagnostic response containing the root cause chain and actionable fix

@@ -129,3 +129,33 @@ func TestSynthesizer_SidecarCascade(t *testing.T) {
 	}
 }
 
+func TestSynthesizer_GracefulShutdownTimeout(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(137)
+	grace := true
+
+	incident := IncidentContext{
+		Namespace:           "production",
+		PodName:             "web-server",
+		ContainerName:       "web-server",
+		ExitCode:            &exitCode,
+		RootCause:           "GracefulShutdownTimeout",
+		Category:            "Infrastructure",
+		Confidence:          "High",
+		Language:            "ko",
+		GracePeriodExceeded: grace,
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) == 0 {
+		t.Fatalf("expected RootCauseChain for GracefulShutdownTimeout")
+	}
+	if !strings.Contains(result.InferredContext, "terminationGracePeriodSeconds") {
+		t.Fatalf("expected InferredContext to mention terminationGracePeriodSeconds, got: %s", result.InferredContext)
+	}
+}
+
+
