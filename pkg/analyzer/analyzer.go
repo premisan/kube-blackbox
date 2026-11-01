@@ -236,8 +236,12 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 
 	// ==================== Step 4: Deep Log Signature Pattern Matching ====================
 	if logRes != nil && logRes.MatchedRule != nil {
+		detailForI18n := logRes.ErrorLocation
+		if logRes.ErrorClass != "" && logRes.ErrorClass != "PythonException" && logRes.ErrorClass != "FatalError" {
+			detailForI18n = logRes.ErrorClass
+		}
 		setDiag(&diagnosis, logRes.Category, logRes.MatchedRule.RootCause, logRes.MatchedRule.Confidence,
-			logRes.MatchedRule.SummaryTpl, logRes.MatchedRule.RecommendedAction, lang, logRes.ErrorLocation)
+			logRes.Summary, logRes.MatchedRule.RecommendedAction, lang, detailForI18n)
 		return diagnosis, evidence
 	}
 

@@ -158,4 +158,45 @@ func TestSynthesizer_GracefulShutdownTimeout(t *testing.T) {
 	}
 }
 
+func TestSynthesizer_PythonUnhandledException(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "sample-python-crash",
+		ContainerName: "python-worker",
+		ExitCode:      &exitCode,
+		RootCause:     "PythonUnhandledException",
+		Category:      "Application",
+		Confidence:    "High",
+		ErrorClass:    "ValueError",
+		Language:      "ko",
+		CulpritCode: &observerv1alpha1.CulpritCode{
+			Language: "Python",
+			File:     "<string>",
+			Line:     11,
+			Function: "process_record",
+		},
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 detailed steps in RootCauseChain, got %d", len(result.RootCauseChain))
+	}
+
+	step1 := result.RootCauseChain[0].Description
+	if !strings.Contains(step1, "process_record") || !strings.Contains(step1, "ValueError") {
+		t.Fatalf("expected Step 1 to describe function and ValueError, got: %s", step1)
+	}
+
+	if !strings.Contains(result.SuggestedFix, "ValueError") || !strings.Contains(result.SuggestedFix, "try-except") {
+		t.Fatalf("expected SuggestedFix to mention ValueError and try-except, got: %s", result.SuggestedFix)
+	}
+}
+
+
 

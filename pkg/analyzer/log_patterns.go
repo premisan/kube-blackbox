@@ -10,16 +10,17 @@ import (
 )
 
 type LogRule struct {
-	Name              string
-	Category          string // Application, Configuration, Dependency, Infrastructure
-	RootCause         string
-	Confidence        string // High, Medium, Low
-	Regex             *regexp.Regexp
-	SummaryTpl        string
-	RecommendedAction string
-	ExtractClass      func(match []string) string
-	ExtractLocation   func(logs string) string
-	ExtractCulprit    func(logs string) *observerv1alpha1.CulpritCode
+	Name                 string
+	Category             string // Application, Configuration, Dependency, Infrastructure
+	RootCause            string
+	Confidence           string // High, Medium, Low
+	Regex                *regexp.Regexp
+	SummaryTpl           string
+	RecommendedAction    string
+	ExtractClass         func(match []string) string
+	ExtractClassFromLogs func(logs string) string
+	ExtractLocation      func(logs string) string
+	ExtractCulprit       func(logs string) *observerv1alpha1.CulpritCode
 }
 
 var logRules = []LogRule{
@@ -437,16 +438,17 @@ var logRules = []LogRule{
 		ExtractClass:      func(m []string) string { return "CUDA_OOM" },
 	},
 	{
-		Name:              "PythonTraceback",
-		Category:          "Application",
-		RootCause:         "AppUnhandledException",
-		Confidence:        "High",
-		Regex:             regexp.MustCompile(`Traceback \(most recent call last\):`),
-		SummaryTpl:        "Python unhandled exception crash",
-		RecommendedAction: "Inspect traceback location and add try/except error handling.",
-		ExtractClass:      func(m []string) string { return "PythonException" },
-		ExtractLocation:   extractPythonLocation,
-		ExtractCulprit:    extractPythonCulprit,
+		Name:                 "PythonTraceback",
+		Category:             "Application",
+		RootCause:            "PythonUnhandledException",
+		Confidence:           "High",
+		Regex:                regexp.MustCompile(`Traceback \(most recent call last\):`),
+		SummaryTpl:           "Python unhandled exception: %s",
+		RecommendedAction:    "Inspect traceback location and add try/except error handling or validate input data.",
+		ExtractClass:         func(m []string) string { return "PythonException" },
+		ExtractClassFromLogs: extractPythonExceptionClass,
+		ExtractLocation:      extractPythonLocation,
+		ExtractCulprit:       extractPythonCulprit,
 	},
 
 	// ==================== Node.js / TypeScript ====================
@@ -1124,11 +1126,19 @@ func matchLogRule(rule *LogRule, processedLogs, tailSnippet string) *LogAnalysis
 
 		summary := rule.SummaryTpl
 		if strings.Contains(rule.SummaryTpl, "%s") {
-			summary = strings.Replace(rule.SummaryTpl, "%s", truncateString(detail, 80), 1)
+			detailToInsert := truncateString(detail, 80)
+			if rule.Name == "PythonTraceback" {
+				if excDetail := extractPythonExceptionDetail(processedLogs); excDetail != "" {
+					detailToInsert = truncateString(excDetail, 80)
+				}
+			}
+			summary = strings.Replace(rule.SummaryTpl, "%s", detailToInsert, 1)
 		}
 
 		var errClass string
-		if rule.ExtractClass != nil {
+		if rule.ExtractClassFromLogs != nil {
+			errClass = rule.ExtractClassFromLogs(processedLogs)
+		} else if rule.ExtractClass != nil {
 			errClass = rule.ExtractClass(loc)
 		}
 
@@ -1316,6 +1326,28 @@ func extractPythonCulprit(logs string) *observerv1alpha1.CulpritCode {
 		Line:     lineNum,
 		Function: last[3],
 	}
+}
+
+var pythonExcRegex = regexp.MustCompile(`(?m)^([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Warning|Interrupt))(?::\s*(.*))?$`)
+
+func extractPythonExceptionClass(logs string) string {
+	matches := pythonExcRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) > 0 {
+		return matches[len(matches)-1][1]
+	}
+	return "PythonException"
+}
+
+func extractPythonExceptionDetail(logs string) string {
+	matches := pythonExcRegex.FindAllStringSubmatch(logs, -1)
+	if len(matches) > 0 {
+		last := matches[len(matches)-1]
+		if len(last) > 2 && last[2] != "" {
+			return last[1] + ": " + last[2]
+		}
+		return last[1]
+	}
+	return "Python unhandled exception"
 }
 
 func extractJavaLocation(logs string) string {

@@ -826,5 +826,45 @@ func TestDiagnose_CPUThrottlingWithLiveness(t *testing.T) {
 	}
 }
 
+func TestDiagnose_PythonUnhandledException_ValueError(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+	logs := `[INFO] Python worker service started successfully
+[INFO] Processing batch analytics jobs...
+[ERROR] Fatal error during batch processing:
+Traceback (most recent call last):
+  File "<string>", line 11, in <module>
+  File "<string>", line 4, in process_record
+ValueError: Corrupted payload detected for record_id=42`
+
+	input := DiagnosticInput{
+		ContainerName: "python-worker",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "python-worker",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "PythonUnhandledException" {
+		t.Fatalf("expected PythonUnhandledException, got %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "ValueError" {
+		t.Fatalf("expected ErrorClass to be ValueError, got: %s", ev.ErrorClass)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.Function != "process_record" {
+		t.Fatalf("expected culprit function process_record, got: %+v", ev.CulpritCode)
+	}
+	if !strings.Contains(diag.Summary, "ValueError") {
+		t.Fatalf("expected summary to mention ValueError, got: %s", diag.Summary)
+	}
+}
+
+
 
 

@@ -191,8 +191,21 @@ func (r *PodReconciler) triggerSynthesis(
 	logger := log.FromContext(ctx).WithValues("crName", crName)
 
 	var matchedEvStrings []string
-	for _, ev := range events {
-		matchedEvStrings = append(matchedEvStrings, ev.Message)
+	if len(evidence.MatchedEvents) > 0 {
+		matchedEvStrings = append(matchedEvStrings, evidence.MatchedEvents...)
+	} else {
+		for _, ev := range events {
+			// Only include abnormal or warning failure events, strictly excluding normal lifecycle events
+			if ev.Type == corev1.EventTypeWarning ||
+				ev.Reason == "Killing" ||
+				ev.Reason == "Unhealthy" ||
+				ev.Reason == "Failed" ||
+				ev.Reason == "BackOff" ||
+				ev.Reason == "Evicted" ||
+				ev.Reason == "OOMKilling" {
+				matchedEvStrings = append(matchedEvStrings, ev.Message)
+			}
+		}
 	}
 
 	inc := synthesizer.IncidentContext{
@@ -204,6 +217,7 @@ func (r *PodReconciler) triggerSynthesis(
 		Category:                  diagnosis.Category,
 		RootCause:                 diagnosis.RootCause,
 		Confidence:                diagnosis.Confidence,
+		ErrorClass:                evidence.ErrorClass,
 		MatchedEvents:             matchedEvStrings,
 		LastLogs:                  logs,
 		Language:                  lang,

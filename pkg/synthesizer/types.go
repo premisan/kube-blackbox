@@ -17,6 +17,7 @@ type IncidentContext struct {
 	Category                  string
 	RootCause                 string
 	Confidence                string
+	ErrorClass                string
 	MatchedEvents             []string
 	LastLogs                  string
 	Language                  string // Requested language: "ko", "en"

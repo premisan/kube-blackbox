@@ -1,6 +1,6 @@
 # Kube-Blackbox (Pod Restart Observer & Flight Recorder)
 
-[![Docker Hub](https://img.shields.io/docker/pulls/premisan0/kube-blackbox?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/premisan0/kube-blackbox)
+[![Docker Hub](https://img.shields.io/docker/pulls/premisan0/kube-blackbox?logo=docker&label=Docker%20Hub&color=066da5)](https://hub.docker.com/r/premisan0/kube-blackbox)
 [![Go Report Card](https://goreportcard.com/badge/github.com/premisan/kube-blackbox)](https://goreportcard.com/report/github.com/premisan/kube-blackbox)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 

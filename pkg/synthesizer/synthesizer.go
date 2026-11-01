@@ -216,6 +216,28 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 			steps = append(steps, "컨테이너 이미지가 빌드된 CPU 아키텍처와 노드의 아키텍처가 불일치함 (예: amd64 vs arm64)")
 			steps = append(steps, "Linux 커널의 execve() 호출 시 ELF 헤더 매직 넘버 검증 실패")
 			steps = append(steps, "exec format error 발생으로 프로세스가 시작조차 되지 못하고 즉시 종료됨")
+		case "PythonUnhandledException", "AppUnhandledException":
+			errName := inc.ErrorClass
+			if errName == "" || errName == "PythonException" {
+				errName = "미처리 예외(Unhandled Exception)"
+			}
+
+			fnStr := ""
+			culpritPart := ""
+			if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+				if inc.CulpritCode.Function != "" {
+					fnStr = fmt.Sprintf(" %s() 함수", inc.CulpritCode.Function)
+				}
+				culpritPart = fmt.Sprintf("소스코드 [%s:%d%s]에서 ", inc.CulpritCode.File, inc.CulpritCode.Line, fnStr)
+			}
+
+			steps = append(steps, fmt.Sprintf("%s런타임 오류로 인해 %s 예외가 발생함", culpritPart, errName))
+			steps = append(steps, "상위 호출 스택에 try-except 예외 포획(catch) 핸들러가 누락되어 최상위 모듈까지 예외가 전파됨")
+			steps = append(steps, fmt.Sprintf("Python 인터프리터가 stderr에 트레이스백(Traceback)을 출력하고 비정상 종료 코드(Exit code %s)로 프로세스를 종료함", exitCodeStr))
+			if len(inc.MatchedEvents) > 0 {
+				steps = append(steps, fmt.Sprintf("관련 클러스터 이상 징후: %s", inc.MatchedEvents[0]))
+			}
+			steps = append(steps, "Kubelet이 컨테이너 비정상 종료를 감지하고 파드 재시작 정책에 따라 재시작함")
 		default:
 			steps = append(steps, fmt.Sprintf("컨테이너 상태 이상이 감지됨 (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -285,6 +307,28 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 				steps = append(steps, "System.NullReferenceException thrown in .NET runtime")
 			}
 			steps = append(steps, "Unhandled exception caused CLR runtime termination")
+		case "PythonUnhandledException", "AppUnhandledException":
+			errName := inc.ErrorClass
+			if errName == "" || errName == "PythonException" {
+				errName = "Unhandled Exception"
+			}
+
+			fnStr := ""
+			culpritPart := ""
+			if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+				if inc.CulpritCode.Function != "" {
+					fnStr = fmt.Sprintf(" function %s()", inc.CulpritCode.Function)
+				}
+				culpritPart = fmt.Sprintf("At [%s:%d%s], ", inc.CulpritCode.File, inc.CulpritCode.Line, fnStr)
+			}
+
+			steps = append(steps, fmt.Sprintf("%sunhandled %s was raised during runtime execution", culpritPart, errName))
+			steps = append(steps, "Exception was not caught by any try-except block, unwinding the call stack to the top-level")
+			steps = append(steps, fmt.Sprintf("Python interpreter printed traceback to stderr and terminated with exit code %s", exitCodeStr))
+			if len(inc.MatchedEvents) > 0 {
+				steps = append(steps, fmt.Sprintf("Correlated cluster anomaly: %s", inc.MatchedEvents[0]))
+			}
+			steps = append(steps, "Kubelet observed non-zero container exit and restarted the container per restartPolicy")
 		default:
 			steps = append(steps, fmt.Sprintf("Container termination observed (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -376,6 +420,16 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 			return "프로세스 열린 파일/소켓 디스크립터 한도(ulimit nofile)에 도달하여 통신이 마비되었습니다."
 		case "ArchitectureMismatch":
 			return "컨테이너 바이너리의 CPU 아키텍처와 노드 아키텍처가 일치하지 않아(Exec format error) 기동에 실패했습니다."
+		case "PythonUnhandledException", "AppUnhandledException":
+			errName := inc.ErrorClass
+			if errName == "" || errName == "PythonException" {
+				errName = "미처리 예외(Unhandled Exception)"
+			}
+			fnStr := ""
+			if inc.CulpritCode != nil && inc.CulpritCode.Function != "" {
+				fnStr = fmt.Sprintf(" %s() 함수", inc.CulpritCode.Function)
+			}
+			return fmt.Sprintf("Python 런타임에서 %s 예외가 처리되지 않아 프로세스가 비정상 종료되었습니다%s%s. 입력값 검증 실패 또는 에러 방어 로직 부재가 원인입니다.", errName, culpritStr, fnStr)
 		default:
 			return fmt.Sprintf("컨테이너가 %s 원인으로 비정상 종료되었습니다%s.", inc.RootCause, culpritStr)
 		}
@@ -407,6 +461,16 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 		return "JVM exhausted allocated heap memory (-Xmx), resulting in OutOfMemoryError."
 	case "DotNetNullReference":
 		return fmt.Sprintf("Uninitialized object reference (NullReferenceException) encountered in .NET runtime%s.", culpritStr)
+	case "PythonUnhandledException", "AppUnhandledException":
+		errName := inc.ErrorClass
+		if errName == "" || errName == "PythonException" {
+			errName = "Unhandled Exception"
+		}
+		fnStr := ""
+		if inc.CulpritCode != nil && inc.CulpritCode.Function != "" {
+			fnStr = fmt.Sprintf(" function %s()", inc.CulpritCode.Function)
+		}
+		return fmt.Sprintf("Unhandled Python %s encountered causing process crash%s%s.", errName, culpritStr, fnStr)
 	default:
 		return fmt.Sprintf("Container terminated due to %s%s.", inc.RootCause, culpritStr)
 	}
@@ -484,6 +548,16 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 			return "1) 컨테이너의 ulimit -n(nofile) 설정을 확인하세요. 2) HTTP 클라이언트 또는 DB 커넥션 종료 후 소켓 close() 누락을 점검하세요."
 		case "ArchitectureMismatch":
 			return "노드 CPU 아키텍처에 맞게 docker buildx --platform linux/amd64,linux/arm64 옵션으로 멀티 아키텍처 이미지를 다시 빌드하세요."
+		case "PythonUnhandledException", "AppUnhandledException":
+			errName := inc.ErrorClass
+			if errName == "" || errName == "PythonException" {
+				errName = "예외"
+			}
+			locStr := ""
+			if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+				locStr = fmt.Sprintf("[%s:%d] ", inc.CulpritCode.File, inc.CulpritCode.Line)
+			}
+			return fmt.Sprintf("1) %s해당 코드 위치에 try-except %s 블록을 추가하여 예외 발생 시 안전하게 복구하거나 로깅 후 정상 종료하도록 처리하세요. 2) 입력값 유효성 검증(Data Validation)을 사전에 수행하여 비정상 데이터 처리를 방어하세요.", locStr, errName)
 		default:
 			return "직전 컨테이너 로그 및 종료 코드를 확인하여 애플리케이션 설정 및 파드 리소스 사양을 점검하세요."
 		}
@@ -514,6 +588,16 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 		return "Implement top-level defer recover() to prevent unexpected panics from terminating the process."
 	case "JVMHeapOOM":
 		return "1) Increase -Xmx heap limit or pod memory limit. 2) Enable -XX:+HeapDumpOnOutOfMemoryError to inspect memory leak candidates."
+	case "PythonUnhandledException", "AppUnhandledException":
+		errName := inc.ErrorClass
+		if errName == "" || errName == "PythonException" {
+			errName = "Exception"
+		}
+		locStr := ""
+		if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+			locStr = fmt.Sprintf("[%s:%d] ", inc.CulpritCode.File, inc.CulpritCode.Line)
+		}
+		return fmt.Sprintf("1) Wrap %scritical logic in try-except %s block with fallback or retry logic. 2) Implement strict input schema validation to prevent invalid payloads from triggering unhandled crashes.", locStr, errName)
 	default:
 		return "Inspect previous container logs and verify pod resource limits and application configurations."
 	}

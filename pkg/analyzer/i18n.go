@@ -197,8 +197,12 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			RecommendedAction: "서버 설정 포트를 변경하거나 포트를 선점한 프로세스를 확인하세요.",
 		},
 		"PythonUnhandledException": {
-			SummaryTpl:        "처리되지 않은 파이썬 예외(Unhandled Exception)로 인해 프로세스가 종료되었습니다.",
-			RecommendedAction: "오류 스니펫의 트레이스백을 확인하여 예외 처리(try-except)를 보강하세요.",
+			SummaryTpl:        "처리되지 않은 파이썬 예외(%s)로 인해 프로세스가 종료되었습니다.",
+			RecommendedAction: "오류 발생 위치에 try-except 예외 처리를 보강하고 입력 데이터 유효성을 검증하세요.",
+		},
+		"AppUnhandledException": {
+			SummaryTpl:        "처리되지 않은 애플리케이션 예외(%s)로 인해 프로세스가 종료되었습니다.",
+			RecommendedAction: "오류 스니펫의 스택 트레이스를 확인하여 예외 핸들러를 보강하세요.",
 		},
 		"PythonMemoryError": {
 			SummaryTpl:        "파이썬 프로세스의 메모리 허용량을 초과했습니다 (MemoryError).",
@@ -493,6 +497,14 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 		"NodeV8FatalError": {
 			SummaryTpl:        "Node.js V8 engine crashed due to JavaScript heap out of memory.",
 			RecommendedAction: "Expand '--max-old-space-size' in NODE_OPTIONS or profile memory leaks.",
+		},
+		"PythonUnhandledException": {
+			SummaryTpl:        "Python unhandled exception crash (%s).",
+			RecommendedAction: "Inspect traceback location and add try/except error handling or validate input data.",
+		},
+		"AppUnhandledException": {
+			SummaryTpl:        "Unhandled application exception crash (%s).",
+			RecommendedAction: "Inspect error traceback and implement proper exception handling.",
 		},
 	},
 }
