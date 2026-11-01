@@ -1572,6 +1572,41 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 		return res
 	}
 
+	// 11. Network, SSL/TLS & HTTP Forward Proxy (Squid) Deep Analysis
+	netTLSDeep := knowledge.AnalyzeNetTLSProxyLogs(processedLogs)
+	if netTLSDeep != nil {
+		category := "Dependency"
+		if netTLSDeep.Component == "tls" {
+			category = "Configuration"
+		} else if netTLSDeep.Component == "network" {
+			category = "Infrastructure"
+		}
+		if res == nil || res.MatchedRule == nil {
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "NetTLSProxy_" + netTLSDeep.Component,
+					Category:          category,
+					RootCause:         netTLSDeep.RootCause,
+					Confidence:        "High",
+					RecommendedAction: netTLSDeep.SuggestedFixKo,
+				},
+				MatchedPattern: "NetTLSProxy_" + netTLSDeep.Component,
+				Category:       category,
+				Snippet:        tailSnippet,
+			}
+		} else {
+			res.MatchedRule.RootCause = netTLSDeep.RootCause
+		}
+		res.ErrorClass = netTLSDeep.ErrorClass
+		if netTLSDeep.SummaryKo != "" {
+			res.Summary = netTLSDeep.SummaryKo
+		}
+		if netTLSDeep.SuggestedFixKo != "" {
+			res.RecommendedAction = netTLSDeep.SuggestedFixKo
+		}
+		return res
+	}
+
 	return res
 }
 

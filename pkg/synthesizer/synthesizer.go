@@ -498,6 +498,62 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 		case "LiteLLMContextWindowExceeded":
 			steps = append(steps, "입력 프롬프트와 요청 토큰 수가 모델의 최대 허용 컨텍스트 길이를 초과함")
 			steps = append(steps, "LiteLLM이 ContextWindowExceededError를 발생시키며 쿼리 실행을 거부함")
+		case "TCPConnectionReset":
+			steps = append(steps, "클라이언트 애플리케이션이 원격 서비스와 TCP 소켓 통신을 수행함")
+			steps = append(steps, "피어 서버 프로세스 비정상 종료 또는 중간 L4 방화벽 유휴 타임아웃 만료")
+			steps = append(steps, "원격 또는 중간 장비로부터 TCP RST(Reset) 패킷이 인입되어 연결이 강제 리셋됨 (ECONNRESET)")
+		case "TCPConnectionRefused":
+			steps = append(steps, "클라이언트가 목적지 IP/포트로 TCP SYN 패킷을 전송함")
+			steps = append(steps, "대상 호스트에서 해당 포트를 수신(Listen) 대기 중인 프로세스가 없거나 NetworkPolicy가 인입 차단")
+			steps = append(steps, "커널이 TCP RST/ACK를 응답하며 연결이 즉시 거절됨 (ECONNREFUSED)")
+		case "TCPConnectionTimeout":
+			steps = append(steps, "클라이언트가 TCP 3-Way Handshake SYN 패킷을 전송하고 응답을 대기함")
+			steps = append(steps, "네트워크 패킷 드롭(방화벽 무응답 드롭 또는 잘못된 라우팅)으로 SYN-ACK 수신 실패")
+			steps = append(steps, fmt.Sprintf("TCP SYN 재전송 횟수 초과로 소켓 연결이 타임아웃(ETIMEDOUT / i/o timeout)되며 실패함 (Exit code %s)", exitCodeStr))
+		case "NetworkUnreachable":
+			steps = append(steps, "애플리케이션이 원격 호스트 IP로 소켓 연결 또는 패킷 전송을 시도함")
+			steps = append(steps, "로컬 라우팅 테이블에 해당 서브넷 목적지 게이트웨이 경로가 누락됨 (No route to host)")
+			steps = append(steps, "커널 IP 스택이 즉시 EHOSTUNREACH / ENETUNREACH 에러를 반환하며 통신 중단")
+		case "EphemeralPortExhaustion":
+			steps = append(steps, "대량의 아웃바운드 단기 연결(Short-lived HTTP 요청)이 급증함")
+			steps = append(steps, "TIME_WAIT 상태 소켓 누적으로 로컬 임시 포트 범위(ip_local_port_range)가 고갈됨")
+			steps = append(steps, "커널이 신규 소켓에 로컬 IP/포트를 할당하지 못해 EADDRNOTAVAIL (Cannot assign requested address) 발생")
+		case "TLSUntrustedCA":
+			steps = append(steps, "클라이언트가 HTTPS/TLS 연결을 맺고 서버 인증서를 수신함")
+			steps = append(steps, "서버 인증서의 발급자(Issuer)가 시스템 신뢰 루트 CA 저장소에 등록되지 않음")
+			steps = append(steps, "X.509 인증서 유효성 검증 실패(certificate signed by unknown authority / PKIX path building failed)")
+		case "TLSCertificateExpired":
+			steps = append(steps, "TLS 세션 협상(Handshake) 중 서버 인증서의 유효기간(NotAfter)을 검증함")
+			steps = append(steps, "인증서 만료일이 지났거나 노드 시스템 시계(Clock)가 어긋나 유효기간 범위를 벗어남")
+			steps = append(steps, "TLS 핸드셰이크가 CERT_HAS_EXPIRED 에러로 즉시 중단됨")
+		case "TLSHostnameMismatch":
+			steps = append(steps, "클라이언트가 대상 도메인 또는 IP로 TLS 연결을 수립함")
+			steps = append(steps, "서버 인증서의 Subject Alternative Name(SAN) 목록에 접속 대상 호스트명이 존재하지 않음")
+			steps = append(steps, "클라이언트 TLS 스택이 호스트명 불일치(Hostname mismatch)로 연결을 강제 차단함")
+		case "TLSClientCertRequired":
+			steps = append(steps, "상호 인증(mTLS) 서버가 핸드셰이크 중 CertificateRequest를 클라이언트에 전송함")
+			steps = append(steps, "클라이언트 설정에 유효한 X.509 클라이언트 인증서가 누락되었거나 CA 검증 거부")
+			steps = append(steps, "서버가 bad_certificate 또는 certificate_required 치명적 알림(Alert)을 보내며 연결 종료")
+		case "ProxyAuthenticationRequired":
+			steps = append(steps, "애플리케이션이 Squid HTTP 프록시를 통해 외부 인터넷 접속을 시도함")
+			steps = append(steps, "Proxy-Authorization 헤더가 누락되었거나 프록시 사용자명/비밀번호가 일치하지 않음")
+			steps = append(steps, "Squid 프록시가 HTTP 407 Proxy Authentication Required 응답을 반환하며 연결 차단")
+		case "ProxyAccessDeniedACL":
+			steps = append(steps, "Squid 프록시가 클라이언트의 HTTP/HTTPS 요청을 수신함")
+			steps = append(steps, "요청한 클라이언트 IP 또는 목적지 도메인이 squid.conf의 http_access 차단 ACL에 매칭됨")
+			steps = append(steps, "Squid가 HTTP 403 Forbidden (ERR_ACCESS_DENIED) 오류를 반환하고 요청을 폐기함")
+		case "ProxyConnectTunnelFailed":
+			steps = append(steps, "클라이언트가 비표준 포트로 HTTPS CONNECT 터널링을 프록시에 요청함")
+			steps = append(steps, "대상 포트가 Squid의 'Safe_ports' 또는 'SSL_ports' 허용 목록에 포함되지 않음")
+			steps = append(steps, "Squid가 보안 정책 위반으로 CONNECT 터널 생성을 거부하고 연결을 끊음")
+		case "ProxyDNSResolutionFailed":
+			steps = append(steps, "Squid 프록시가 요청된 목적지 도메인(FQDN)의 IP 주소 해석을 시도함")
+			steps = append(steps, "프록시 로컬 네임서버 장애 또는 존재하지 않는 도메인으로 DNS 질의 실패")
+			steps = append(steps, "Squid가 HTTP 502 Bad Gateway (ERR_DNS_FAIL)를 반환함")
+		case "ProxyGatewayTimeout":
+			steps = append(steps, "Squid 프록시가 외부 업스트림 서버로 연결 후 응답을 대기함")
+			steps = append(steps, "원격 서버의 응답 지연으로 Squid의 read_timeout 타이머가 만료됨")
+			steps = append(steps, "Squid가 클라이언트에게 HTTP 504 Gateway Timeout (ERR_READ_TIMEOUT)을 반환함")
 		default:
 			steps = append(steps, fmt.Sprintf("컨테이너 상태 이상이 감지됨 (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -838,6 +894,62 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 		case "LiteLLMContextWindowExceeded":
 			steps = append(steps, "Input prompt and requested generation tokens exceeded model capacity")
 			steps = append(steps, "LiteLLM rejected request with ContextWindowExceededError")
+		case "TCPConnectionReset":
+			steps = append(steps, "Client attempted communication with remote service via TCP")
+			steps = append(steps, "Peer process terminated unexpectedly or intermediate firewall closed idle connection")
+			steps = append(steps, "TCP RST packet delivered, causing connection reset by peer (ECONNRESET)")
+		case "TCPConnectionRefused":
+			steps = append(steps, "Client transmitted TCP SYN packet to target IP/port")
+			steps = append(steps, "No active listener process on port or NetworkPolicy blocked ingress")
+			steps = append(steps, "Kernel returned TCP RST/ACK, immediately refusing connection (ECONNREFUSED)")
+		case "TCPConnectionTimeout":
+			steps = append(steps, "Client initiated TCP 3-way handshake and awaited SYN-ACK")
+			steps = append(steps, "Firewall dropped SYN silently or route discarded packets without response")
+			steps = append(steps, fmt.Sprintf("TCP SYN retransmission limit reached, terminating connection with timeout (Exit code %s)", exitCodeStr))
+		case "NetworkUnreachable":
+			steps = append(steps, "Application dispatched network packet to destination host")
+			steps = append(steps, "Host or CNI routing table lacked valid gateway route (No route to host)")
+			steps = append(steps, "IP layer halted socket communication with EHOSTUNREACH / ENETUNREACH")
+		case "EphemeralPortExhaustion":
+			steps = append(steps, "Surge of outbound short-lived HTTP/TCP connections created")
+			steps = append(steps, "Accumulated TIME_WAIT sockets exhausted local port allocation range")
+			steps = append(steps, "Kernel failed to bind socket with EADDRNOTAVAIL (Cannot assign requested address)")
+		case "TLSUntrustedCA":
+			steps = append(steps, "Client established TLS handshake and retrieved server certificate")
+			steps = append(steps, "Certificate issuer CA not found in system trust store")
+			steps = append(steps, "X.509 validation aborted with 'certificate signed by unknown authority' or PKIX failure")
+		case "TLSCertificateExpired":
+			steps = append(steps, "Client evaluated server certificate validity dates (NotAfter)")
+			steps = append(steps, "Certificate expiration date elapsed or system clock is out of sync")
+			steps = append(steps, "TLS handshake aborted with CERT_HAS_EXPIRED")
+		case "TLSHostnameMismatch":
+			steps = append(steps, "Client verified certificate Subject Alternative Names (SAN)")
+			steps = append(steps, "Target destination hostname or IP missing from certificate SAN extensions")
+			steps = append(steps, "TLS handshake rejected connection to prevent man-in-the-middle impersonation")
+		case "TLSClientCertRequired":
+			steps = append(steps, "mTLS server issued CertificateRequest during handshake negotiation")
+			steps = append(steps, "Client failed to present valid client certificate or private key")
+			steps = append(steps, "Server issued bad_certificate / certificate_required alert, closing stream")
+		case "ProxyAuthenticationRequired":
+			steps = append(steps, "Application routed outbound traffic through Squid forward proxy")
+			steps = append(steps, "Proxy-Authorization header missing or proxy credentials invalid")
+			steps = append(steps, "Squid rejected request with HTTP 407 Proxy Authentication Required")
+		case "ProxyAccessDeniedACL":
+			steps = append(steps, "Squid proxy received client HTTP/HTTPS request")
+			steps = append(steps, "Client IP or destination domain matched denial ACL in squid.conf")
+			steps = append(steps, "Squid responded with HTTP 403 Forbidden (ERR_ACCESS_DENIED)")
+		case "ProxyConnectTunnelFailed":
+			steps = append(steps, "Client attempted HTTPS CONNECT tunnel to non-standard destination port")
+			steps = append(steps, "Port violated Squid Safe_ports or SSL_ports whitelist policy")
+			steps = append(steps, "Squid closed connection with CONNECT method denied")
+		case "ProxyDNSResolutionFailed":
+			steps = append(steps, "Squid forward proxy attempted DNS lookup for destination FQDN")
+			steps = append(steps, "Upstream DNS resolution failed or domain does not exist")
+			steps = append(steps, "Squid returned HTTP 502 Bad Gateway (ERR_DNS_FAIL)")
+		case "ProxyGatewayTimeout":
+			steps = append(steps, "Squid proxy forwarded request to upstream destination and waited for response")
+			steps = append(steps, "Upstream server delayed response beyond Squid read_timeout limit")
+			steps = append(steps, "Squid returned HTTP 504 Gateway Timeout (ERR_READ_TIMEOUT)")
 		default:
 			steps = append(steps, fmt.Sprintf("Container termination observed (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -1057,6 +1169,34 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 			return "LiteLLM 가상 키에 할당된 최대 비용 예산(max_budget) 한도에 도달하여 요청이 차단되었습니다."
 		case "LiteLLMContextWindowExceeded":
 			return "요청 토큰 수가 LLM 모델의 최대 컨텍스트 윈도우 길이를 초과했습니다."
+		case "TCPConnectionReset":
+			return "피어 서버의 비정상 종료 또는 방화벽 세션 만료로 TCP 연결이 강제 리셋(RST)되었습니다."
+		case "TCPConnectionRefused":
+			return "대상 목적지 포트가 열려있지 않거나 프로세스가 실행되지 않아 TCP 연결이 거절되었습니다."
+		case "TCPConnectionTimeout":
+			return "방화벽 패킷 드롭 또는 라우팅 장애로 TCP SYN 응답을 받지 못해 연결이 타임아웃되었습니다."
+		case "NetworkUnreachable":
+			return "로컬 라우팅 경로 부재 또는 서브넷 게이트웨이 단절로 네트워크 목적지에 도달할 수 없습니다."
+		case "EphemeralPortExhaustion":
+			return "아웃바운드 단기 소켓 과다로 인해 로컬 임시 포트(Ephemeral Port)가 고갈되었습니다."
+		case "TLSUntrustedCA":
+			return "대상 서버의 TLS 인증서가 신뢰할 수 없는 CA에 의해 서명되어 인증서 검증에 실패했습니다."
+		case "TLSCertificateExpired":
+			return "대상 서버의 TLS 인증서 유효기간이 만료되었거나 시스템 시계가 동기화되지 않았습니다."
+		case "TLSHostnameMismatch":
+			return "TLS 인증서의 주체 대체 이름(SAN)과 접속 대상 호스트명이 일치하지 않아 연결이 차단되었습니다."
+		case "TLSClientCertRequired":
+			return "상호 TLS(mTLS) 서버가 클라이언트 인증서를 요구하였으나 인증서가 누락되었거나 거부되었습니다."
+		case "ProxyAuthenticationRequired":
+			return "Squid HTTP 프록시의 인증 자격 증명(Proxy-Authorization)이 누락되었거나 올바르지 않습니다."
+		case "ProxyAccessDeniedACL":
+			return "Squid 프록시의 접근 제어 목록(ACL) 정책에 의해 요청이 차단(403 Forbidden)되었습니다."
+		case "ProxyConnectTunnelFailed":
+			return "비표준 포트 접속으로 인해 Squid 프록시의 HTTPS CONNECT 터널링이 거부되었습니다."
+		case "ProxyDNSResolutionFailed":
+			return "Squid 프록시 서버에서 목적지 도메인의 DNS 해석에 실패하여 502 Bad Gateway가 발생했습니다."
+		case "ProxyGatewayTimeout":
+			return "Squid 프록시가 업스트림 서버로부터 시간 내에 응답을 받지 못해 504 Gateway Timeout이 발생했습니다."
 		default:
 			return fmt.Sprintf("컨테이너가 %s 원인으로 비정상 종료되었습니다%s.", inc.RootCause, culpritStr)
 		}
@@ -1216,6 +1356,34 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 		return "LiteLLM user/key budget limit exceeded; further requests rejected."
 	case "LiteLLMContextWindowExceeded":
 		return "Prompt and generation tokens exceeded LLM model maximum context window length."
+	case "TCPConnectionReset":
+		return "TCP connection forcibly reset by peer or intermediate firewall/LB (ECONNRESET)."
+	case "TCPConnectionRefused":
+		return "TCP connection refused: target port is not listening or process is down (ECONNREFUSED)."
+	case "TCPConnectionTimeout":
+		return "TCP connection timed out waiting for SYN-ACK response (ETIMEDOUT / i/o timeout)."
+	case "NetworkUnreachable":
+		return "No routing path to target host or subnet gateway down (EHOSTUNREACH / ENETUNREACH)."
+	case "EphemeralPortExhaustion":
+		return "Outbound ephemeral ports exhausted, preventing new TCP socket allocation (EADDRNOTAVAIL)."
+	case "TLSUntrustedCA":
+		return "TLS certificate signed by unknown authority (self-signed or untrusted private CA)."
+	case "TLSCertificateExpired":
+		return "TLS certificate expired or system clock out of sync (CERT_HAS_EXPIRED)."
+	case "TLSHostnameMismatch":
+		return "TLS certificate Subject Alternative Name (SAN) does not match target hostname."
+	case "TLSClientCertRequired":
+		return "Mutual TLS (mTLS) handshake failed: client certificate required by server."
+	case "ProxyAuthenticationRequired":
+		return "Squid forward proxy authentication required (HTTP 407 Proxy Authentication Required)."
+	case "ProxyAccessDeniedACL":
+		return "Squid forward proxy access denied by ACL policy (HTTP 403 Forbidden)."
+	case "ProxyConnectTunnelFailed":
+		return "Squid HTTPS CONNECT tunnel rejected due to non-standard or restricted port."
+	case "ProxyDNSResolutionFailed":
+		return "Squid forward proxy failed upstream domain DNS resolution (HTTP 502 Bad Gateway)."
+	case "ProxyGatewayTimeout":
+		return "Squid forward proxy upstream read timed out (HTTP 504 Gateway Timeout)."
 	default:
 		return fmt.Sprintf("Container terminated due to %s%s.", inc.RootCause, culpritStr)
 	}
@@ -1424,6 +1592,34 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 			return "1) LiteLLM 관리자 UI 또는 API에서 해당 사용자/키의 'max_budget' 한도를 증설하거나 리셋하세요. 2) 월간 예산 리셋 주기를 확인하세요."
 		case "LiteLLMContextWindowExceeded":
 			return "1) 대화 히스토리 슬라이딩 윈도우 또는 텍스트 요약을 적용하여 프롬프트를 압축하세요. 2) 더 큰 컨텍스트 윈도우를 지원하는 모델(Gemini 1.5, Claude 3.5 등)로 전환하세요."
+		case "TCPConnectionReset":
+			return "1) 대상 서비스 파드의 비정상 종료(SIGSEGV/OOM) 여부를 확인하세요. 2) L4/클라우드 로드밸런서의 Idle Timeout 설정을 클라이언트 keep-alive 주기보다 길게 늘리세요."
+		case "TCPConnectionRefused":
+			return "1) 대상 파드가 기동되어 지정된 포트로 리슨 중인지 점검하세요 ('kubectl get endpoints <svc>'). 2) Kubernetes Service의 port와 targetPort가 일치하는지 확인하세요."
+		case "TCPConnectionTimeout":
+			return "1) 목적지 IP/포트에 대한 NetworkPolicy 인입(Ingress) 규칙 및 보안 그룹(Security Group)을 점검하세요. 2) VPC 서브넷 라우팅 테이블이 패킷을 정상 포워딩하는지 확인하세요."
+		case "NetworkUnreachable":
+			return "1) 노드의 CNI 플러그인(Calico, Cilium) 상태와 Pod CIDR 라우팅을 점검하세요. 2) 외부 통신 시 NAT 게이트웨이 또는 Egress Gateway 라우팅 상태를 확인하세요."
+		case "EphemeralPortExhaustion":
+			return "1) HTTP 커넥션 풀(Keep-Alive)을 적용하여 소켓 재사용률을 높이세요. 2) 노드 sysctl 설정을 확장하세요:\n```bash\nsysctl -w net.ipv4.ip_local_port_range=\"1024 65535\"\nsysctl -w net.ipv4.tcp_tw_reuse=1\n```"
+		case "TLSUntrustedCA":
+			return "1) 사설 루트 CA 인증서를 ConfigMap으로 생성하고 컨테이너의 '/etc/ssl/certs' 또는 Java 'cacerts'에 마운트하세요. 2) Dockerfile에서 'update-ca-certificates'를 실행하도록 설정하세요."
+		case "TLSCertificateExpired":
+			return "1) 대상 서버의 만료된 TLS 인증서를 즉시 갱신하세요 ('cert-manager renew' 등). 2) 노드의 NTP 데몬(chrony, systemd-timesyncd)을 점검하여 시스템 시계를 동기화하세요."
+		case "TLSHostnameMismatch":
+			return "1) 'openssl s_client -connect <host>:<port> -servername <host>' 명령으로 서버 인증서의 SAN 목록을 점검하세요. 2) IP 주소 대신 인증서에 등록된 올바른 FQDN 도메인명으로 접속하세요."
+		case "TLSClientCertRequired":
+			return "1) 클라이언트 설정에 유효한 mTLS 클라이언트 인증서(cert.pem)와 개인키(key.pem)를 등록하세요. 2) Istio PeerAuthentication 모드를 점검하세요."
+		case "ProxyAuthenticationRequired":
+			return "1) HTTP_PROXY 또는 HTTPS_PROXY 환경변수에 프록시 인증 계정 정보를 포함하세요 (예: 'http://username:password@proxy.internal:3128'). 2) Squid 프록시의 'auth_param basic' 설정을 확인하세요."
+		case "ProxyAccessDeniedACL":
+			return "1) Squid의 'squid.conf'에서 클라이언트 소스 IP 대역 또는 대상 도메인에 대한 허용 규칙을 추가하세요:\n```ini\nacl my_k8s_cluster src 10.244.0.0/16\nhttp_access allow my_k8s_cluster\n```\n2) 'squid -k reconfigure'를 실행하여 설정을 갱신하세요."
+		case "ProxyConnectTunnelFailed":
+			return "1) Squid 설정에 대상 서비스의 포트를 허용 목록으로 추가하세요:\n```ini\nacl SSL_ports port 8443 9443 6443\nacl Safe_ports port 8443 9443 6443\n```\n2) 'http_access deny !Safe_ports' 거부 규칙 순서를 확인하세요."
+		case "ProxyDNSResolutionFailed":
+			return "1) Squid 프록시 서버의 '/etc/resolv.conf' 네임서버 및 외부 인터넷 DNS 질의 연결성을 점검하세요. 2) 요청 URL의 호스트명 오탈자를 확인하세요."
+		case "ProxyGatewayTimeout":
+			return "1) Squid 설정의 'read_timeout'(기본 15분) 및 'connect_timeout'을 환경에 맞게 늘리세요. 2) 목적지 서버의 데이터베이스 쿼리 및 애플리케이션 지연을 최적화하세요."
 		default:
 			return "직전 컨테이너 로그 및 종료 코드를 확인하여 애플리케이션 설정 및 파드 리소스 사양을 점검하세요."
 		}
@@ -1582,6 +1778,34 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 		return "1) Increase or reset 'max_budget' for the user/key via LiteLLM Admin API or UI. 2) Verify budget reset duration settings."
 	case "LiteLLMContextWindowExceeded":
 		return "1) Truncate or summarize prompt history to fit within the context window. 2) Switch to a larger context window model."
+	case "TCPConnectionReset":
+		return "1) Check if remote service pod crashed unexpectedly (OOM/segfault). 2) Ensure load balancer idle timeout exceeds client keep-alive duration."
+	case "TCPConnectionRefused":
+		return "1) Verify destination pod is running and listening on the target port ('kubectl get endpoints <svc>'). 2) Check Service targetPort mapping."
+	case "TCPConnectionTimeout":
+		return "1) Inspect NetworkPolicy ingress rules and cloud security groups for dropped SYN packets. 2) Check VPC route table health."
+	case "NetworkUnreachable":
+		return "1) Check node CNI plugin health (Calico, Cilium) and pod CIDR routes. 2) Verify NAT Gateway status for outbound internet traffic."
+	case "EphemeralPortExhaustion":
+		return "1) Implement HTTP connection pooling with keep-alive. 2) Expand sysctl: 'sysctl -w net.ipv4.ip_local_port_range=\"1024 65535\"' and 'net.ipv4.tcp_tw_reuse=1'."
+	case "TLSUntrustedCA":
+		return "1) Mount private root CA certificate into container trust store (/etc/ssl/certs or Java cacerts). 2) Run 'update-ca-certificates' in Dockerfile."
+	case "TLSCertificateExpired":
+		return "1) Renew the expired TLS certificate on the target server ('cert-manager renew'). 2) Verify node clock synchronization via NTP."
+	case "TLSHostnameMismatch":
+		return "1) Verify certificate SAN with 'openssl s_client -connect <host>:<port>'. 2) Connect via valid FQDN domain name rather than raw IP."
+	case "TLSClientCertRequired":
+		return "1) Supply valid mTLS client certificate and private key in client request options. 2) Check Istio PeerAuthentication mode."
+	case "ProxyAuthenticationRequired":
+		return "1) Add proxy credentials to HTTP_PROXY/HTTPS_PROXY environment variables (http://user:pass@proxy:3128). 2) Check Squid auth_param configuration."
+	case "ProxyAccessDeniedACL":
+		return "1) Add 'http_access allow' rule for client IP or destination domain in squid.conf. 2) Run 'squid -k reconfigure' to apply changes."
+	case "ProxyConnectTunnelFailed":
+		return "1) Add target port to 'SSL_ports' and 'Safe_ports' in squid.conf. 2) Review the '!Safe_ports' denial rule ordering."
+	case "ProxyDNSResolutionFailed":
+		return "1) Inspect /etc/resolv.conf and upstream DNS connectivity on the Squid proxy host. 2) Check destination hostname spelling."
+	case "ProxyGatewayTimeout":
+		return "1) Increase 'read_timeout' and 'connect_timeout' in squid.conf. 2) Optimize upstream server processing latency."
 	default:
 		return "Inspect previous container logs and verify pod resource limits and application configurations."
 	}

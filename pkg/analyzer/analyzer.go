@@ -210,6 +210,7 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (observerv1alpha1.Dia
 		// If connection refused or no logs and sidecar crashed
 		if logRes == nil || logRes.MatchedRule == nil ||
 			logRes.MatchedRule.RootCause == "ConnectionRefused" ||
+			logRes.MatchedRule.RootCause == "TCPConnectionRefused" ||
 			logRes.MatchedRule.RootCause == "NginxBadGatewayUpstream" ||
 			logRes.MatchedRule.RootCause == "EnvoyNoHealthyUpstream" {
 			setDiag(&diagnosis, "Dependency", "SidecarCascadeFailure", "High",

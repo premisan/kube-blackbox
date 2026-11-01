@@ -708,6 +708,86 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "LiteLLM 프록시 가상 키 인증 실패 또는 업스트림 LLM 프로바이더 API 키 무효.",
 			RecommendedAction: "클라이언트의 Bearer 토큰 및 LiteLLM 환경변수의 프로바이더 API 키를 점검하세요.",
 		},
+		"TCPConnectionReset": {
+			SummaryTpl:        "피어 서버 또는 중간 방화벽/L4에 의해 TCP 연결이 강제 리셋됨 (ECONNRESET / connection reset by peer).",
+			RecommendedAction: "원격 서비스 파드의 비정상 크래시 여부 및 L4 로드밸런서 유휴 세션 타임아웃(Idle timeout)을 확인하세요.",
+		},
+		"TCPConnectionRefused": {
+			SummaryTpl:        "대상 서비스 포트가 열려있지 않거나 프로세스가 다운되어 TCP 연결이 거절됨 (ECONNREFUSED).",
+			RecommendedAction: "대상 파드가 정상 기동 중인지, 서비스 targetPort 설정 및 NetworkPolicy 인입 허용을 점검하세요.",
+		},
+		"TCPConnectionTimeout": {
+			SummaryTpl:        "TCP 3-Way Handshake SYN 패킷 응답 대기 시간 초과 (ETIMEDOUT / i/o timeout).",
+			RecommendedAction: "보안 그룹(Security Group), 클러스터 방화벽 또는 NetworkPolicy가 SYN 패킷을 드롭하지 않는지 점검하세요.",
+		},
+		"NetworkUnreachable": {
+			SummaryTpl:        "네트워크 라우팅 경로 부재 또는 서브넷 게이트웨이 연결 불가 (No route to host / ENETUNREACH).",
+			RecommendedAction: "노드 CNI 라우팅 테이블, VPC 서브넷 라우팅 및 NAT 게이트웨이 가동 상태를 점검하세요.",
+		},
+		"EphemeralPortExhaustion": {
+			SummaryTpl:        "아웃바운드 임시 포트(Ephemeral Port) 고갈로 신규 소켓 바인딩 실패 (EADDRNOTAVAIL).",
+			RecommendedAction: "HTTP 커넥션 풀을 적용하고 sysctl 'net.ipv4.ip_local_port_range' 확장 및 'net.ipv4.tcp_tw_reuse=1'을 활성화하세요.",
+		},
+		"DNSResolutionTimeout": {
+			SummaryTpl:        "DNS 쿼리 타임아웃 또는 도메인 해석 실패 (EAI_AGAIN / UnknownHostException).",
+			RecommendedAction: "CoreDNS 파드 부하 상태를 점검하고 파드 dnsConfig의 ndots 값을 2 이하로 최적화하세요.",
+		},
+		"BrokenPipe": {
+			SummaryTpl:        "이미 닫힌 TCP 소켓 연결에 데이터를 쓰려다 파이프가 단절됨 (EPIPE / Broken pipe).",
+			RecommendedAction: "클라이언트 요청 타임아웃이 서버 응답 시간보다 짧아 조기 연결 종료되었는지 확인하세요.",
+		},
+		"TLSUntrustedCA": {
+			SummaryTpl:        "TLS/HTTPS 인증서가 신뢰할 수 없는 CA에 의해 서명됨 (x509: certificate signed by unknown authority).",
+			RecommendedAction: "컨테이너의 CA 신뢰 저장소(/etc/ssl/certs, Java cacerts)에 사설 CA 인증서를 마운트하고 'update-ca-certificates'를 실행하세요.",
+		},
+		"TLSCertificateExpired": {
+			SummaryTpl:        "TLS 인증서가 만료되었거나 시스템 시계가 동기화되지 않음 (CERT_HAS_EXPIRED).",
+			RecommendedAction: "대상 서버의 TLS 인증서를 즉시 갱신하고 노드 NTP 시간 동기화 상태를 점검하세요.",
+		},
+		"TLSHostnameMismatch": {
+			SummaryTpl:        "TLS 인증서의 주체 대체 이름(SAN)과 접속 대상 호스트명/IP 불일치 (ERR_TLS_CERT_ALTNAME_INVALID).",
+			RecommendedAction: "접속 대상 FQDN이 인증서의 SAN 목록에 포함되어 있는지 확인하고 IP 대신 도메인명으로 접속하세요.",
+		},
+		"TLSHandshakeProtocolMismatch": {
+			SummaryTpl:        "TLS 프로토콜 버전 또는 암호화 스위트(Cipher Suite) 불일치 (HANDSHAKE_FAILURE).",
+			RecommendedAction: "클라이언트와 서버의 지원 TLS 버전(최소 TLS 1.2 이상) 및 공통 암호화 스위트 설정을 점검하세요.",
+		},
+		"TLSClientCertRequired": {
+			SummaryTpl:        "상호 TLS(mTLS) 클라이언트 인증서가 누락되었거나 거부됨 (ssl alert certificate required).",
+			RecommendedAction: "클라이언트 요청에 유효한 mTLS 클라이언트 인증서 및 개인키를 등록하세요.",
+		},
+		"TLSIncompleteChain": {
+			SummaryTpl:        "서버가 중간 CA(Intermediate CA) 인증서를 누락하여 인증서 체인 검증 실패 (unable to get local issuer certificate).",
+			RecommendedAction: "웹서버 또는 Ingress에 중간 인증서가 포함된 전체 체인(fullchain.pem)을 번들링하세요.",
+		},
+		"ProxyAuthenticationRequired": {
+			SummaryTpl:        "Squid HTTP 프록시 인증 필요 (HTTP 407 Proxy Authentication Required).",
+			RecommendedAction: "HTTP_PROXY 환경변수에 프록시 인증 자격 증명(http://user:pass@proxy:3128)을 포함하세요.",
+		},
+		"ProxyAccessDeniedACL": {
+			SummaryTpl:        "Squid 프록시 접근 제어 목록(ACL) 차단 (HTTP 403 Forbidden - ERR_ACCESS_DENIED).",
+			RecommendedAction: "squid.conf에서 클라이언트 소스 IP 또는 대상 도메인에 대한 'http_access allow' 규칙을 추가하세요.",
+		},
+		"ProxyConnectTunnelFailed": {
+			SummaryTpl:        "Squid HTTPS CONNECT 터널링 거절 (비표준 포트 또는 Safe_ports 차단).",
+			RecommendedAction: "squid.conf의 'SSL_ports' 및 'Safe_ports'에 목적지 포트를 추가하세요.",
+		},
+		"ProxyDNSResolutionFailed": {
+			SummaryTpl:        "Squid 프록시의 업스트림 도메인 DNS 해석 실패 (HTTP 502 Bad Gateway - ERR_DNS_FAIL).",
+			RecommendedAction: "Squid 프록시 서버의 /etc/resolv.conf 네임서버 설정 및 외부 DNS 연결성을 점검하세요.",
+		},
+		"ProxyGatewayTimeout": {
+			SummaryTpl:        "Squid 프록시의 업스트림 서버 응답 대기 시간 초과 (HTTP 504 Gateway Timeout - ERR_READ_TIMEOUT).",
+			RecommendedAction: "Squid 설정의 'read_timeout'을 늘리거나 업스트림 서버 처리 지연을 최적화하세요.",
+		},
+		"ProxyConnectionRefused": {
+			SummaryTpl:        "Squid 프록시가 업스트림 서버 TCP 연결에 실패함 (HTTP 503 Service Unavailable - ERR_CONNECT_FAIL).",
+			RecommendedAction: "대상 서버의 포트 개방 상태 및 프록시 서버와 대상 사이의 방화벽을 점검하세요.",
+		},
+		"ProxySSLBumpFailure": {
+			SummaryTpl:        "Squid SslBump 동적 인증서 생성 실패 (ERR_SECURE_ACCEPT_FAIL).",
+			RecommendedAction: "Squid ssl_crtd 헬퍼 권한 및 캐시 크기를 확인하고 사설 루트 CA 유효기간을 점검하세요.",
+		},
 		"DiskNoSpaceLeft": {
 			SummaryTpl:        "컨테이너 로컬 파일시스템의 저장 공간이 고갈되었습니다 (ENOSPC).",
 			RecommendedAction: "임시 파일을 정리하거나 파드의 ephemeral-storage 할당량을 증설하세요.",
@@ -1134,6 +1214,86 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "LiteLLM virtual key authentication failed or upstream LLM provider API key invalid.",
 			RecommendedAction: "Verify client Bearer token matches LiteLLM virtual key and check upstream API keys.",
 		},
+		"TCPConnectionReset": {
+			SummaryTpl:        "TCP connection forcibly reset by peer or intermediate firewall (ECONNRESET).",
+			RecommendedAction: "Check remote pod crash status and L4 load balancer idle session timeout.",
+		},
+		"TCPConnectionRefused": {
+			SummaryTpl:        "TCP connection refused: target port is not listening or process is down (ECONNREFUSED).",
+			RecommendedAction: "Verify the target pod is running and listening on the designated port, and check NetworkPolicy.",
+		},
+		"TCPConnectionTimeout": {
+			SummaryTpl:        "TCP connection timed out waiting for SYN-ACK response (ETIMEDOUT / i/o timeout).",
+			RecommendedAction: "Inspect security groups, cluster firewalls, or NetworkPolicies for dropped SYN packets.",
+		},
+		"NetworkUnreachable": {
+			SummaryTpl:        "No routing path to target host or subnet gateway down (EHOSTUNREACH / ENETUNREACH).",
+			RecommendedAction: "Verify CNI routing table health, VPC subnet route tables, and NAT gateways.",
+		},
+		"EphemeralPortExhaustion": {
+			SummaryTpl:        "Outbound ephemeral ports exhausted, preventing new TCP socket allocation (EADDRNOTAVAIL).",
+			RecommendedAction: "Reuse connections with HTTP Keep-Alive pooling and expand sysctl 'net.ipv4.ip_local_port_range'.",
+		},
+		"DNSResolutionTimeout": {
+			SummaryTpl:        "DNS resolution timed out or temporary failure in name resolution (EAI_AGAIN).",
+			RecommendedAction: "Check CoreDNS pod status and reduce ndots in pod dnsConfig to prevent search loops.",
+		},
+		"BrokenPipe": {
+			SummaryTpl:        "Attempted write to an already-closed TCP socket stream (EPIPE / Broken pipe).",
+			RecommendedAction: "Check if client prematurely closed connection due to short request timeout.",
+		},
+		"TLSUntrustedCA": {
+			SummaryTpl:        "TLS certificate signed by unknown authority (self-signed or untrusted root CA).",
+			RecommendedAction: "Mount private root CA into container trust store (/etc/ssl/certs or Java cacerts) and update-ca-certificates.",
+		},
+		"TLSCertificateExpired": {
+			SummaryTpl:        "TLS certificate has expired or system clock is out of sync (CERT_HAS_EXPIRED).",
+			RecommendedAction: "Renew the expired TLS certificate on the target server and verify node NTP synchronization.",
+		},
+		"TLSHostnameMismatch": {
+			SummaryTpl:        "TLS certificate Subject Alternative Name (SAN) does not match target hostname or IP address.",
+			RecommendedAction: "Inspect certificate SAN list and connect via designated FQDN instead of raw IP.",
+		},
+		"TLSHandshakeProtocolMismatch": {
+			SummaryTpl:        "TLS protocol version or cipher suite mismatch between client and server (HANDSHAKE_FAILURE).",
+			RecommendedAction: "Ensure client and server enable at least TLS 1.2 and share compatible cipher suites.",
+		},
+		"TLSClientCertRequired": {
+			SummaryTpl:        "Mutual TLS (mTLS) handshake failed: client certificate required by server but not provided or rejected.",
+			RecommendedAction: "Provide valid client certificate and private key in client request configuration.",
+		},
+		"TLSIncompleteChain": {
+			SummaryTpl:        "Server returned incomplete certificate chain missing intermediate CA certificate.",
+			RecommendedAction: "Bundle the full certificate chain (fullchain.pem) including intermediate CAs in server config.",
+		},
+		"ProxyAuthenticationRequired": {
+			SummaryTpl:        "Squid forward proxy authentication required (HTTP 407 Proxy Authentication Required).",
+			RecommendedAction: "Include proxy credentials in HTTP_PROXY/HTTPS_PROXY environment variables (http://user:pass@proxy:3128).",
+		},
+		"ProxyAccessDeniedACL": {
+			SummaryTpl:        "Squid forward proxy access denied by ACL (HTTP 403 Forbidden - ERR_ACCESS_DENIED).",
+			RecommendedAction: "Add 'http_access allow' rule for client IP or destination domain in squid.conf.",
+		},
+		"ProxyConnectTunnelFailed": {
+			SummaryTpl:        "Squid HTTPS CONNECT tunnel rejected (non-standard SSL port or Safe_ports violation).",
+			RecommendedAction: "Add the target destination port to SSL_ports and Safe_ports in squid.conf.",
+		},
+		"ProxyDNSResolutionFailed": {
+			SummaryTpl:        "Squid proxy failed to resolve upstream target domain DNS (HTTP 502 - ERR_DNS_FAIL).",
+			RecommendedAction: "Inspect /etc/resolv.conf and upstream DNS connectivity on the Squid proxy host.",
+		},
+		"ProxyGatewayTimeout": {
+			SummaryTpl:        "Squid proxy upstream read timeout (HTTP 504 Gateway Timeout - ERR_READ_TIMEOUT).",
+			RecommendedAction: "Increase 'read_timeout' and 'connect_timeout' in squid.conf.",
+		},
+		"ProxyConnectionRefused": {
+			SummaryTpl:        "Squid proxy failed to establish TCP connection to upstream server (HTTP 503 - ERR_CONNECT_FAIL).",
+			RecommendedAction: "Verify destination server is running and listening on target port, and check firewalls.",
+		},
+		"ProxySSLBumpFailure": {
+			SummaryTpl:        "Squid SslBump dynamic certificate generation or verification failed (ERR_SECURE_ACCEPT_FAIL).",
+			RecommendedAction: "Check squid ssl_crtd helper permissions and private root CA certificate validity.",
+		},
 	},
 }
 
@@ -1178,7 +1338,15 @@ func Localize(rootCause, lang, defaultSummary, defaultAction, detail string) (st
 		strings.HasPrefix(defaultSummary, "NFS") ||
 		strings.HasPrefix(defaultSummary, "kube-dns") ||
 		strings.HasPrefix(defaultSummary, "metrics-server") ||
-		strings.HasPrefix(defaultSummary, "LiteLLM")) {
+		strings.HasPrefix(defaultSummary, "LiteLLM") ||
+		strings.HasPrefix(defaultSummary, "Squid") ||
+		strings.HasPrefix(defaultSummary, "TLS") ||
+		strings.HasPrefix(defaultSummary, "TCP") ||
+		strings.HasPrefix(defaultSummary, "Proxy") ||
+		strings.HasPrefix(defaultSummary, "DNS") ||
+		strings.HasPrefix(defaultSummary, "피어") ||
+		strings.HasPrefix(defaultSummary, "대상") ||
+		strings.HasPrefix(defaultSummary, "네트워크")) {
 		return defaultSummary, defaultAction
 	}
 	langDict, ok := i18nRegistry[lang]

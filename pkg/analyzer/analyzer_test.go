@@ -1250,6 +1250,89 @@ func TestDiagnose_LiteLLMRateLimit(t *testing.T) {
 	}
 }
 
+func TestDiagnose_SquidAuthRequired(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `HTTP/1.1 407 Proxy Authentication Required
+Proxy-Authenticate: Basic realm="Squid proxy"
+Connection: close`
+	input := DiagnosticInput{
+		ContainerName: "crawler",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "crawler",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "ProxyAuthenticationRequired" {
+		t.Fatalf("expected ProxyAuthenticationRequired, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "Squid_407_AuthRequired" {
+		t.Fatalf("expected Squid_407_AuthRequired, got: %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_TLSUntrustedCA(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `javax.net.ssl.SSLHandshakeException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target`
+	input := DiagnosticInput{
+		ContainerName: "backend",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "backend",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "TLSUntrustedCA" {
+		t.Fatalf("expected TLSUntrustedCA, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "TLS_Certificate_UnknownCA" {
+		t.Fatalf("expected TLS_Certificate_UnknownCA, got: %s", ev.ErrorClass)
+	}
+}
+
+func TestDiagnose_TCPConnectionReset(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `Post "https://api.internal.org/v1": read: connection reset by peer`
+	input := DiagnosticInput{
+		ContainerName: "gateway",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "gateway",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "TCPConnectionReset" {
+		t.Fatalf("expected TCPConnectionReset, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "Network_TCP_ConnectionReset" {
+		t.Fatalf("expected Network_TCP_ConnectionReset, got: %s", ev.ErrorClass)
+	}
+}
+
 
 
 

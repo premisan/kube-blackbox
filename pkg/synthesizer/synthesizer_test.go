@@ -397,5 +397,61 @@ func TestSynthesizer_ClickHouseParts(t *testing.T) {
 	}
 }
 
+func TestSynthesizer_SquidAuthRequired(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "web-scraper-12",
+		ContainerName: "scraper",
+		ExitCode:      &exitCode,
+		RootCause:     "ProxyAuthenticationRequired",
+		Category:      "Dependency",
+		Confidence:    "High",
+		ErrorClass:    "Squid_407_AuthRequired",
+		Language:      "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 steps, got %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.SuggestedFix, "HTTP_PROXY") {
+		t.Fatalf("expected fix to mention HTTP_PROXY, got: %s", result.SuggestedFix)
+	}
+}
+
+func TestSynthesizer_TLSUntrustedCA(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "payment-gateway",
+		ContainerName: "gateway",
+		ExitCode:      &exitCode,
+		RootCause:     "TLSUntrustedCA",
+		Category:      "Configuration",
+		Confidence:    "High",
+		ErrorClass:    "TLS_Certificate_UnknownCA",
+		Language:      "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 steps, got %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.SuggestedFix, "update-ca-certificates") {
+		t.Fatalf("expected fix to mention update-ca-certificates, got: %s", result.SuggestedFix)
+	}
+}
+
 
 
