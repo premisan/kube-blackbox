@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1188,7 +1189,7 @@ func AnalyzeLogs(logs string) *LogAnalysisResult {
 			for _, rule := range rules {
 				checkedRules[rule] = true
 				if res := matchLogRule(rule, processedLogs, tailSnippet); res != nil {
-					return res
+					return enrichWithDeepAnalysis(res, processedLogs, tailSnippet)
 				}
 			}
 		}
@@ -1200,11 +1201,11 @@ func AnalyzeLogs(logs string) *LogAnalysisResult {
 			continue
 		}
 		if res := matchLogRule(rule, processedLogs, tailSnippet); res != nil {
-			return res
+			return enrichWithDeepAnalysis(res, processedLogs, tailSnippet)
 		}
 	}
 
-	return &LogAnalysisResult{
+	fallbackRes := &LogAnalysisResult{
 		MatchedRule:       nil,
 		MatchedPattern:    "",
 		Category:          "Unknown",
@@ -1212,6 +1213,140 @@ func AnalyzeLogs(logs string) *LogAnalysisResult {
 		Summary:           "",
 		RecommendedAction: "",
 	}
+	return enrichWithDeepAnalysis(fallbackRes, processedLogs, tailSnippet)
+}
+
+func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSnippet string) *LogAnalysisResult {
+	// 1. Python Deep Analysis
+	if strings.Contains(processedLogs, "Traceback (most recent call last):") || strings.Contains(processedLogs, "Fatal Python error:") {
+		pyDeep := knowledge.AnalyzePythonDeepCrash(processedLogs)
+		if pyDeep != nil {
+			if res == nil || res.MatchedRule == nil {
+				res = &LogAnalysisResult{
+					MatchedRule: &LogRule{
+						Name:              "PythonDeepTraceback",
+						Category:          "Application",
+						RootCause:         "PythonUnhandledException",
+						Confidence:        "High",
+						RecommendedAction: "Inspect Python traceback and add error handling.",
+					},
+					MatchedPattern: "PythonDeepTraceback",
+					Category:       "Application",
+					Snippet:        tailSnippet,
+				}
+			}
+			if pyDeep.IsChained && pyDeep.InitialCauseClass != "" {
+				res.ErrorClass = fmt.Sprintf("%s (Chained from %s)", pyDeep.ExceptionClass, pyDeep.InitialCauseClass)
+			} else if pyDeep.ExceptionClass != "" {
+				res.ErrorClass = pyDeep.ExceptionClass
+			}
+			if pyDeep.CulpritCode != nil {
+				res.CulpritCode = pyDeep.CulpritCode
+				res.ErrorLocation = fmt.Sprintf("%s:%d", pyDeep.CulpritCode.File, pyDeep.CulpritCode.Line)
+			}
+			if pyDeep.ExceptionClass == "CircularImportError" {
+				res.MatchedRule.RootCause = "CircularImportError"
+			}
+			if pyDeep.MissingPackage != "" {
+				res.MatchedRule.RootCause = "PythonModuleNotFound"
+			}
+			if pyDeep.SummaryKo != "" {
+				res.Summary = pyDeep.SummaryKo
+			}
+			if pyDeep.SuggestedFixKo != "" {
+				res.RecommendedAction = pyDeep.SuggestedFixKo
+			}
+			return res
+		}
+	}
+
+	// 2. Java / Spring Deep Analysis
+	if strings.Contains(processedLogs, "\tat ") && (strings.Contains(processedLogs, "Exception") || strings.Contains(processedLogs, "Error") || strings.Contains(processedLogs, "# Problematic frame:")) {
+		javaDeep := knowledge.AnalyzeJavaDeepCrash(processedLogs)
+		if javaDeep != nil {
+			if res == nil || res.MatchedRule == nil {
+				res = &LogAnalysisResult{
+					MatchedRule: &LogRule{
+						Name:              "JavaDeepCrash",
+						Category:          "Application",
+						RootCause:         "JVMHeapOOM",
+						Confidence:        "High",
+						RecommendedAction: "Inspect Java stack trace and exception root cause.",
+					},
+					MatchedPattern: "JavaDeepCrash",
+					Category:       "Application",
+					Snippet:        tailSnippet,
+				}
+			}
+			if javaDeep.IsUnwrapped && javaDeep.RootExceptionClass != "" {
+				res.ErrorClass = javaDeep.RootExceptionClass
+				if strings.Contains(javaDeep.RootExceptionClass, "LazyInitializationException") {
+					res.MatchedRule.RootCause = "LazyInitializationException"
+				} else if strings.Contains(javaDeep.RootExceptionClass, "TransientPropertyValueException") {
+					res.MatchedRule.RootCause = "TransientPropertyValueException"
+				}
+			}
+			if strings.Contains(processedLogs, "form a cycle:") {
+				res.MatchedRule.RootCause = "SpringCircularDependency"
+			}
+			if javaDeep.CulpritCode != nil {
+				res.CulpritCode = javaDeep.CulpritCode
+				res.ErrorLocation = fmt.Sprintf("%s:%d", javaDeep.CulpritCode.File, javaDeep.CulpritCode.Line)
+			}
+			if javaDeep.SummaryKo != "" {
+				res.Summary = javaDeep.SummaryKo
+			}
+			if javaDeep.SuggestedFixKo != "" {
+				res.RecommendedAction = javaDeep.SuggestedFixKo
+			}
+			return res
+		}
+	}
+
+	// 3. Node.js Deep Analysis
+	if strings.Contains(processedLogs, "at ") && (strings.Contains(processedLogs, "Error") || strings.Contains(processedLogs, "unhandledRejection") || strings.Contains(processedLogs, "UnhandledPromiseRejection") || strings.Contains(processedLogs, "FATAL ERROR:")) {
+		nodeDeep := knowledge.AnalyzeNodeDeepCrash(processedLogs)
+		if nodeDeep != nil {
+			if res == nil || res.MatchedRule == nil {
+				res = &LogAnalysisResult{
+					MatchedRule: &LogRule{
+						Name:              "NodeDeepCrash",
+						Category:          "Application",
+						RootCause:         "NodeTypeError",
+						Confidence:        "High",
+						RecommendedAction: "Inspect Node.js stack trace and error origin.",
+					},
+					MatchedPattern: "NodeDeepCrash",
+					Category:       "Application",
+					Snippet:        tailSnippet,
+				}
+			}
+			if nodeDeep.IsUnhandledRejection {
+				res.MatchedRule.RootCause = "NodeUnhandledPromiseRejection"
+			}
+			if nodeDeep.PrismaCode != "" {
+				res.MatchedRule.RootCause = "NodePrismaError"
+				res.ErrorClass = "Prisma_" + nodeDeep.PrismaCode
+			}
+			if strings.Contains(processedLogs, "exports is not defined") || strings.Contains(processedLogs, "require is not defined") || strings.Contains(processedLogs, "Cannot use import statement") {
+				res.MatchedRule.RootCause = "NodeESMMismatch"
+				res.ErrorClass = "ESMMismatch"
+			}
+			if nodeDeep.CulpritCode != nil {
+				res.CulpritCode = nodeDeep.CulpritCode
+				res.ErrorLocation = fmt.Sprintf("%s:%d", nodeDeep.CulpritCode.File, nodeDeep.CulpritCode.Line)
+			}
+			if nodeDeep.SummaryKo != "" {
+				res.Summary = nodeDeep.SummaryKo
+			}
+			if nodeDeep.SuggestedFixKo != "" {
+				res.RecommendedAction = nodeDeep.SuggestedFixKo
+			}
+			return res
+		}
+	}
+
+	return res
 }
 
 func extractTailSnippet(lines []string, n int) string {

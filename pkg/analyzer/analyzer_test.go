@@ -865,6 +865,127 @@ ValueError: Corrupted payload detected for record_id=42`
 	}
 }
 
+func TestDiagnose_PythonChainedException(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+Traceback (most recent call last):
+  File "/app/services/db.py", line 45, in connect_db
+    raise ConnectionRefusedError("Failed to connect to postgres:5432")
+ConnectionRefusedError: Failed to connect to postgres:5432
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/main.py", line 88, in startup_event
+    connect_db()
+  File "/app/services/db.py", line 48, in connect_db
+    raise RuntimeError("Application bootstrap failed due to database connectivity")
+RuntimeError: Application bootstrap failed due to database connectivity`
+
+	input := DiagnosticInput{
+		ContainerName: "fastapi-app",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "fastapi-app",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "PythonUnhandledException" {
+		t.Fatalf("expected PythonUnhandledException, got %s", diag.RootCause)
+	}
+	if !strings.Contains(ev.ErrorClass, "ConnectionRefusedError") {
+		t.Fatalf("expected ErrorClass to capture chained root cause, got: %s", ev.ErrorClass)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "db.py" {
+		t.Fatalf("expected culprit db.py, got: %+v", ev.CulpritCode)
+	}
+}
+
+func TestDiagnose_JavaSpringDeepCausedBy(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'userController': Injection of autowired dependencies failed
+	at org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor.postProcessProperties(AutowiredAnnotationBeanPostProcessor.java:515)
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'userService': Unsatisfied dependency expressed through field 'dataSource'
+	at org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor$AutowiredFieldElement.resolveFieldValue(AutowiredAnnotationBeanPostProcessor.java:787)
+Caused by: com.zaxxer.hikari.pool.HikariPool$PoolInitializationException: Failed to initialize pool: Connection refused
+	at com.zaxxer.hikari.pool.HikariPool.checkFailFast(HikariPool.java:549)
+Caused by: java.sql.SQLNonTransientConnectionException: Could not connect to address=(host=10.96.0.4)(port=3306): Connection refused
+	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:110)
+	at com.company.payment.repository.OrderRepository.findPending(OrderRepository.java:42)`
+
+	input := DiagnosticInput{
+		ContainerName: "spring-app",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "spring-app",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if ev.ErrorClass != "java.sql.SQLNonTransientConnectionException" {
+		t.Fatalf("expected root unwrapped error class SQLNonTransientConnectionException, got: %s", ev.ErrorClass)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "OrderRepository.java" || ev.CulpritCode.Line != 42 {
+		t.Fatalf("expected culprit OrderRepository.java:42, got: %+v", ev.CulpritCode)
+	}
+	if diag.Confidence != "High" {
+		t.Fatalf("expected High confidence, got: %s", diag.Confidence)
+	}
+}
+
+func TestDiagnose_NodePrismaDeepError(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+PrismaClientKnownRequestError: 
+Invalid 'prisma.user.create()' invocation:
+Unique constraint failed on the constraint: 'users_email_key' (P2002)
+    at RequestHandler.handleRequestError (/app/node_modules/@prisma/client/runtime/library.js:122:7147)
+    at async createUser (/app/src/services/userService.ts:45:18)
+    at async handleSignUp (/app/src/controllers/authController.ts:24:12)`
+
+	input := DiagnosticInput{
+		ContainerName: "node-app",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "node-app",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "NodePrismaError" {
+		t.Fatalf("expected NodePrismaError, got: %s", diag.RootCause)
+	}
+	if ev.ErrorClass != "Prisma_P2002" {
+		t.Fatalf("expected Prisma_P2002, got: %s", ev.ErrorClass)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "userService.ts" || ev.CulpritCode.Line != 45 {
+		t.Fatalf("expected culprit userService.ts:45, got: %+v", ev.CulpritCode)
+	}
+}
+
 
 
 

@@ -276,6 +276,30 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "처리되지 않은 프로미스 거부(Unhandled Promise Rejection)로 충돌했습니다.",
 			RecommendedAction: "비동기 Promise 호출에 .catch() 핸들러를 추가하거나 try/catch 블록으로 감싸세요.",
 		},
+		"CircularImportError": {
+			SummaryTpl:        "Python 모듈 상호 순환 참조(Circular Import)가 발생했습니다: %s",
+			RecommendedAction: "함수 내부 로컬 임포트를 적용하거나 공유 모델을 별도 모듈로 분리하세요.",
+		},
+		"SpringCircularDependency": {
+			SummaryTpl:        "Spring Boot 빈 상호 순환 참조(Circular Dependency)로 인해 컨텍스트 초기화에 실패했습니다.",
+			RecommendedAction: "상호 의존 빈 주입 지점에 @Lazy를 부여하거나 의존성을 리팩토링하세요.",
+		},
+		"LazyInitializationException": {
+			SummaryTpl:        "JPA/Hibernate LazyInitializationException: 세션 종료 후 지연 로딩 접근으로 실패했습니다.",
+			RecommendedAction: "JPQL에 JOIN FETCH 또는 @EntityGraph를 적용하거나 @Transactional 스코프를 확장하세요.",
+		},
+		"TransientPropertyValueException": {
+			SummaryTpl:        "JPA TransientPropertyValueException: 영속화되지 않은 자식 엔티티를 참조했습니다.",
+			RecommendedAction: "엔티티 관계에 cascade = CascadeType.ALL을 추가하거나 자식 엔티티를 먼저 저장하세요.",
+		},
+		"NodeESMMismatch": {
+			SummaryTpl:        "Node.js 모듈 시스템(ESM vs CommonJS) 불일치 오류가 발생했습니다.",
+			RecommendedAction: "package.json에 '\"type\": \"module\"'을 설정하거나 .cjs 파일 확장자를 사용하세요.",
+		},
+		"NodePrismaError": {
+			SummaryTpl:        "Prisma ORM 데이터베이스 오류가 발생했습니다: %s",
+			RecommendedAction: "Prisma 스키마 정의 및 유니크 제약/연결 설정을 점검하세요.",
+		},
 		"RustUnwrapNone": {
 			SummaryTpl:        "Rust 패닉: None 상태의 Option 객체에 unwrap()을 호출했습니다.",
 			RecommendedAction: ".unwrap() 대신 match 또는 if let 패턴 매칭으로 None 케이스를 처리하세요.",
@@ -506,11 +530,48 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 			SummaryTpl:        "Unhandled application exception crash (%s).",
 			RecommendedAction: "Inspect error traceback and implement proper exception handling.",
 		},
+		"CircularImportError": {
+			SummaryTpl:        "Python circular module import detected: %s.",
+			RecommendedAction: "Refactor shared models or move import inside function scope.",
+		},
+		"SpringCircularDependency": {
+			SummaryTpl:        "Spring Boot circular bean dependency detected.",
+			RecommendedAction: "Apply @Lazy annotation or refactor bean dependencies.",
+		},
+		"LazyInitializationException": {
+			SummaryTpl:        "JPA/Hibernate LazyInitializationException: no active session.",
+			RecommendedAction: "Apply JOIN FETCH or @EntityGraph, or extend @Transactional scope.",
+		},
+		"TransientPropertyValueException": {
+			SummaryTpl:        "JPA TransientPropertyValueException: unsaved transient instance.",
+			RecommendedAction: "Configure cascade = CascadeType.ALL or persist child entity first.",
+		},
+		"NodeESMMismatch": {
+			SummaryTpl:        "Node.js module system mismatch (ESM vs CommonJS).",
+			RecommendedAction: "Configure '\"type\": \"module\"' in package.json or use .cjs extensions.",
+		},
+		"NodePrismaError": {
+			SummaryTpl:        "Prisma ORM database error: %s.",
+			RecommendedAction: "Verify Prisma schema mappings and database connectivity.",
+		},
 	},
 }
 
 // Localize resolves localized summary and action for a root cause.
 func Localize(rootCause, lang, defaultSummary, defaultAction, detail string) (string, string) {
+	if defaultSummary != "" && (strings.HasPrefix(defaultSummary, "Python 모듈") ||
+		strings.HasPrefix(defaultSummary, "Pydantic") ||
+		strings.HasPrefix(defaultSummary, "Spring Boot") ||
+		strings.HasPrefix(defaultSummary, "HikariCP") ||
+		strings.HasPrefix(defaultSummary, "Hibernate") ||
+		strings.HasPrefix(defaultSummary, "JPA") ||
+		strings.HasPrefix(defaultSummary, "Node.js 모듈") ||
+		strings.HasPrefix(defaultSummary, "Node.js 비동기") ||
+		strings.HasPrefix(defaultSummary, "Prisma") ||
+		strings.HasPrefix(defaultSummary, "NestJS") ||
+		strings.HasPrefix(defaultSummary, "Express")) {
+		return defaultSummary, defaultAction
+	}
 	langDict, ok := i18nRegistry[lang]
 	if !ok {
 		// Fallback to English, then default

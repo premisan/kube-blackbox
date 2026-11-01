@@ -198,5 +198,86 @@ func TestSynthesizer_PythonUnhandledException(t *testing.T) {
 	}
 }
 
+func TestSynthesizer_NodeTypeError(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "sample-nodejs-crash",
+		ContainerName: "nodejs-api",
+		ExitCode:      &exitCode,
+		RootCause:     "NodeTypeError",
+		Category:      "Application",
+		Confidence:    "High",
+		ErrorClass:    "TypeError",
+		Language:      "ko",
+		CulpritCode: &observerv1alpha1.CulpritCode{
+			Language: "JavaScript/TypeScript",
+			File:     "order_service.js",
+			Line:     84,
+			Function: "processOrder",
+		},
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 detailed steps in RootCauseChain, got %d", len(result.RootCauseChain))
+	}
+
+	step1 := result.RootCauseChain[0].Description
+	if !strings.Contains(step1, "order_service.js:84") || !strings.Contains(step1, "undefined") {
+		t.Fatalf("expected Step 1 to describe order_service.js:84 and undefined, got: %s", step1)
+	}
+
+	if !strings.Contains(result.SuggestedFix, "옵셔널 체이닝") {
+		t.Fatalf("expected SuggestedFix to recommend optional chaining, got: %s", result.SuggestedFix)
+	}
+}
+
+func TestSynthesizer_LazyInitializationException(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "sample-java-crash",
+		ContainerName: "java-backend",
+		ExitCode:      &exitCode,
+		RootCause:     "LazyInitializationException",
+		Category:      "Application",
+		Confidence:    "High",
+		ErrorClass:    "org.hibernate.LazyInitializationException",
+		Language:      "ko",
+		CulpritCode: &observerv1alpha1.CulpritCode{
+			Language:  "Java",
+			Framework: "Spring",
+			File:      "OrderService.java",
+			Line:      52,
+			Function:  "com.app.service.OrderService.getOrderDetails",
+		},
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 detailed steps in RootCauseChain, got %d", len(result.RootCauseChain))
+	}
+
+	step1 := result.RootCauseChain[0].Description
+	if !strings.Contains(step1, "OrderService.java:52") || !strings.Contains(step1, "지연 로딩") {
+		t.Fatalf("expected Step 1 to describe OrderService.java:52 and lazy loading, got: %s", step1)
+	}
+
+	if !strings.Contains(result.SuggestedFix, "JOIN FETCH") {
+		t.Fatalf("expected SuggestedFix to recommend JOIN FETCH, got: %s", result.SuggestedFix)
+	}
+}
+
 
 

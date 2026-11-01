@@ -238,6 +238,54 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 				steps = append(steps, fmt.Sprintf("관련 클러스터 이상 징후: %s", inc.MatchedEvents[0]))
 			}
 			steps = append(steps, "Kubelet이 컨테이너 비정상 종료를 감지하고 파드 재시작 정책에 따라 재시작함")
+		case "CircularImportError":
+			steps = append(steps, "Python 모듈 초기화 중 상호 참조(Circular Import) 구조가 감지됨")
+			steps = append(steps, "한쪽 모듈이 아직 완전히 로드되지 않은 상태에서 다른 모듈의 심볼을 import 시도함")
+			steps = append(steps, fmt.Sprintf("ImportError 발생으로 인터프리터 부트스트랩이 실패하고 프로세스가 종료됨 (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet이 컨테이너 초기화 실패를 감지하고 파드 재시작 정책에 따라 재시작함")
+		case "SpringCircularDependency":
+			steps = append(steps, "Spring Boot ApplicationContext 기동 중 의존성 주입(DI) 그래프 생성 수행")
+			steps = append(steps, "빈(Bean)들 간의 상호 순환 참조 고리(Cycle)가 형성되어 생성 순서를 결정하지 못함")
+			steps = append(steps, fmt.Sprintf("BeanCurrentlyInCreationException 발생으로 스프링 부트 컨텍스트 초기화가 중단되고 종료됨 (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet이 프로세스 비정상 종료를 감지하고 재기동함")
+		case "LazyInitializationException":
+			culpritPart := ""
+			if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+				culpritPart = fmt.Sprintf("[%s:%d] ", inc.CulpritCode.File, inc.CulpritCode.Line)
+			}
+			steps = append(steps, fmt.Sprintf("%s영속성 컨텍스트(Session) 종료 후 트랜잭션 외부에서 JPA 지연 로딩(Lazy) 연관 관계 접근", culpritPart))
+			steps = append(steps, "데이터베이스 세션 연결이 단절된 상태에서 프록시 객체 초기화 실패")
+			steps = append(steps, fmt.Sprintf("org.hibernate.LazyInitializationException 예외가 전파되며 런타임 스레드 및 프로세스 종료 (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet이 컨테이너 재시작 정책에 따라 재기동함")
+		case "TransientPropertyValueException":
+			steps = append(steps, "부모 엔티티 저장 시 아직 영속화(persist)되지 않은 자식 엔티티를 참조함")
+			steps = append(steps, "JPA/Hibernate 매핑에 cascade 영속성 전이 설정 부재로 DB 외래키 무결성 위반 방지 차원에서 예외 발생")
+			steps = append(steps, fmt.Sprintf("org.hibernate.TransientPropertyValueException 발생으로 트랜잭션 롤백 및 종료됨 (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet이 컨테이너를 재시작함")
+		case "NodeTypeError":
+			culpritPart := ""
+			if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+				culpritPart = fmt.Sprintf("소스코드 [%s:%d]에서 ", inc.CulpritCode.File, inc.CulpritCode.Line)
+			}
+			steps = append(steps, fmt.Sprintf("%s정의되지 않은 객체(undefined 또는 null)의 프로퍼티 또는 메서드 접근 시도", culpritPart))
+			steps = append(steps, "V8 자바스크립트 엔진이 런타임 TypeError 예외를 발생시킴")
+			steps = append(steps, fmt.Sprintf("상위 호출 스택에 try-catch 에러 핸들러가 누락되어 프로세스가 즉시 비정상 종료됨 (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet이 컨테이너 비정상 종료를 감지하고 파드 재시작 정책에 따라 재기동함")
+		case "NodeUnhandledPromiseRejection":
+			steps = append(steps, "비동기(async/Promise) 로직 실행 도중 거부(Rejection) 또는 예외가 발생함")
+			steps = append(steps, "호출 체인에 await 누락 또는 .catch() 에러 처리 핸들러 부재로 미처리 거부(UnhandledPromiseRejection) 상태가 됨")
+			steps = append(steps, fmt.Sprintf("Node.js 15+ 런타임 정책에 따라 비정상 종료 코드(Exit code %s)로 프로세스가 즉시 종료됨", exitCodeStr))
+			steps = append(steps, "Kubelet이 컨테이너 비정상 종료를 감지하고 재기동함")
+		case "NodeESMMismatch":
+			steps = append(steps, "Node.js 모듈 로드 시점 ESM(import/export)과 CommonJS(require/module.exports) 구문 불일치 발생")
+			steps = append(steps, "V8 모듈 로더가 현재 스코프에서 모듈 심볼을 해석하지 못해 ReferenceError/SyntaxError 발생")
+			steps = append(steps, fmt.Sprintf("모듈 초기화 실패로 애플리케이션이 시작되지 못하고 즉시 종료됨 (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet이 컨테이너를 재시작함")
+		case "NodePrismaError", "NodePrismaInitFailed":
+			steps = append(steps, "Prisma ORM 클라이언트가 데이터베이스 서버 접속 또는 쿼리 실행을 시도함")
+			steps = append(steps, fmt.Sprintf("데이터베이스 오류(유니크 제약 위반, 연결 불가 또는 스키마 불일치: %s) 발생", inc.ErrorClass))
+			steps = append(steps, fmt.Sprintf("PrismaClient 에러가 처리되지 않아 서비스 프로세스가 비정상 종료됨 (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet이 컨테이너 재시작 정책에 따라 재기동함")
 		default:
 			steps = append(steps, fmt.Sprintf("컨테이너 상태 이상이 감지됨 (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -329,6 +377,43 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 				steps = append(steps, fmt.Sprintf("Correlated cluster anomaly: %s", inc.MatchedEvents[0]))
 			}
 			steps = append(steps, "Kubelet observed non-zero container exit and restarted the container per restartPolicy")
+		case "CircularImportError":
+			steps = append(steps, "Python circular module dependency detected during module load")
+			steps = append(steps, "Attempted to import attribute from partially initialized module")
+			steps = append(steps, fmt.Sprintf("ImportError halted interpreter bootstrap (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet observed container crash and restarted per restartPolicy")
+		case "SpringCircularDependency":
+			steps = append(steps, "Spring Boot ApplicationContext created bean dependency graph")
+			steps = append(steps, "Circular dependency cycle detected between beans preventing initialization")
+			steps = append(steps, fmt.Sprintf("BeanCurrentlyInCreationException halted application context (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet restarted container")
+		case "LazyInitializationException":
+			steps = append(steps, "JPA entity lazy-loading property accessed outside active persistence session")
+			steps = append(steps, "org.hibernate.LazyInitializationException unhandled by application layer")
+			steps = append(steps, fmt.Sprintf("Thread crashed and JVM terminated (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet restarted container")
+		case "TransientPropertyValueException":
+			steps = append(steps, "Parent entity references unsaved transient child entity without cascade")
+			steps = append(steps, "org.hibernate.TransientPropertyValueException triggered transaction rollback")
+			steps = append(steps, fmt.Sprintf("Application terminated with exit code %s", exitCodeStr))
+			steps = append(steps, "Kubelet restarted container")
+		case "NodeTypeError":
+			steps = append(steps, "Attempted property or method access on undefined or null object in JavaScript")
+			steps = append(steps, "V8 runtime raised TypeError")
+			steps = append(steps, fmt.Sprintf("Missing try-catch handler caused Node.js process to exit (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet restarted container")
+		case "NodeUnhandledPromiseRejection":
+			steps = append(steps, "Asynchronous Promise rejected without .catch() or await handler")
+			steps = append(steps, fmt.Sprintf("Node.js 15+ unhandledRejection policy aborted process (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet restarted container")
+		case "NodeESMMismatch":
+			steps = append(steps, "Module system mismatch between ES Module (import) and CommonJS (require)")
+			steps = append(steps, fmt.Sprintf("V8 module loader threw ReferenceError/SyntaxError (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet restarted container")
+		case "NodePrismaError", "NodePrismaInitFailed":
+			steps = append(steps, fmt.Sprintf("Prisma ORM failed during database query or connection (%s)", inc.ErrorClass))
+			steps = append(steps, fmt.Sprintf("Unhandled PrismaClient error crashed service (Exit code %s)", exitCodeStr))
+			steps = append(steps, "Kubelet restarted container")
 		default:
 			steps = append(steps, fmt.Sprintf("Container termination observed (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
 			if len(inc.MatchedEvents) > 0 {
@@ -430,6 +515,22 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 				fnStr = fmt.Sprintf(" %s() 함수", inc.CulpritCode.Function)
 			}
 			return fmt.Sprintf("Python 런타임에서 %s 예외가 처리되지 않아 프로세스가 비정상 종료되었습니다%s%s. 입력값 검증 실패 또는 에러 방어 로직 부재가 원인입니다.", errName, culpritStr, fnStr)
+		case "CircularImportError":
+			return fmt.Sprintf("Python 모듈 상호 순환 참조(Circular Import)로 인해 모듈 심볼 로드에 실패했습니다%s.", culpritStr)
+		case "SpringCircularDependency":
+			return fmt.Sprintf("Spring Boot 빈들 간의 상호 순환 참조(Circular Dependency)로 인해 ApplicationContext 초기화에 실패했습니다%s.", culpritStr)
+		case "LazyInitializationException":
+			return fmt.Sprintf("JPA/Hibernate 영속성 컨텍스트(Session) 종료 후 트랜잭션 외부에서 지연 로딩 필드에 접근하여 실패했습니다%s.", culpritStr)
+		case "TransientPropertyValueException":
+			return fmt.Sprintf("JPA 저장 시 영속화되지 않은 자식 엔티티를 참조(TransientPropertyValueException)하여 실패했습니다%s.", culpritStr)
+		case "NodeTypeError":
+			return fmt.Sprintf("Node.js V8 런타임에서 undefined 또는 null 객체의 속성을 읽으려다 TypeError가 발생했습니다%s.", culpritStr)
+		case "NodeUnhandledPromiseRejection":
+			return fmt.Sprintf("Node.js 비동기 Promise 실행 중 거부(Rejection)가 발생했으나 에러 핸들러가 누락되어 충돌했습니다%s.", culpritStr)
+		case "NodeESMMismatch":
+			return fmt.Sprintf("Node.js 모듈 로드 중 ESM(import)과 CommonJS(require) 구문 불일치로 인해 기동에 실패했습니다%s.", culpritStr)
+		case "NodePrismaError", "NodePrismaInitFailed":
+			return fmt.Sprintf("Prisma ORM 데이터베이스 오류(%s)로 인해 서비스 프로세스가 비정상 종료되었습니다%s.", inc.ErrorClass, culpritStr)
 		default:
 			return fmt.Sprintf("컨테이너가 %s 원인으로 비정상 종료되었습니다%s.", inc.RootCause, culpritStr)
 		}
@@ -471,6 +572,22 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 			fnStr = fmt.Sprintf(" function %s()", inc.CulpritCode.Function)
 		}
 		return fmt.Sprintf("Unhandled Python %s encountered causing process crash%s%s.", errName, culpritStr, fnStr)
+	case "CircularImportError":
+		return fmt.Sprintf("Python circular module dependency prevented import resolution%s.", culpritStr)
+	case "SpringCircularDependency":
+		return fmt.Sprintf("Spring Boot circular bean dependency cycle prevented context initialization%s.", culpritStr)
+	case "LazyInitializationException":
+		return fmt.Sprintf("JPA/Hibernate LazyInitializationException: lazy association accessed without active session%s.", culpritStr)
+	case "TransientPropertyValueException":
+		return fmt.Sprintf("JPA TransientPropertyValueException: referenced unsaved transient child entity%s.", culpritStr)
+	case "NodeTypeError":
+		return fmt.Sprintf("Node.js TypeError: cannot read property of undefined or null%s.", culpritStr)
+	case "NodeUnhandledPromiseRejection":
+		return fmt.Sprintf("Node.js UnhandledPromiseRejection: rejected promise terminated process%s.", culpritStr)
+	case "NodeESMMismatch":
+		return fmt.Sprintf("Node.js module system mismatch between ESM and CommonJS%s.", culpritStr)
+	case "NodePrismaError", "NodePrismaInitFailed":
+		return fmt.Sprintf("Prisma ORM database error (%s) halted service%s.", inc.ErrorClass, culpritStr)
 	default:
 		return fmt.Sprintf("Container terminated due to %s%s.", inc.RootCause, culpritStr)
 	}
@@ -558,6 +675,25 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 				locStr = fmt.Sprintf("[%s:%d] ", inc.CulpritCode.File, inc.CulpritCode.Line)
 			}
 			return fmt.Sprintf("1) %s해당 코드 위치에 try-except %s 블록을 추가하여 예외 발생 시 안전하게 복구하거나 로깅 후 정상 종료하도록 처리하세요. 2) 입력값 유효성 검증(Data Validation)을 사전에 수행하여 비정상 데이터 처리를 방어하세요.", locStr, errName)
+		case "CircularImportError":
+			return "1) 상호 순환 참조되는 import 구문을 함수 내부(로컬 스코프)로 이동하세요. 2) 타입 힌팅 전용인 경우 'if typing.TYPE_CHECKING:' 블록을 사용하세요. 3) 공통 데이터 모델을 별도 모듈로 분리하세요."
+		case "SpringCircularDependency":
+			return "1) 상호 주입되는 빈 필드나 생성자 매개변수에 '@Lazy' 어노테이션을 추가하세요. 2) 공통 비즈니스 로직을 제3의 서비스 빈으로 분리하세요. 3) 임시로 application.yml에 'spring.main.allow-circular-references: true'를 활성화하세요."
+		case "LazyInitializationException":
+			return "1) Repository JPQL 쿼리에 'JOIN FETCH'를 추가하여 연관 엔티티를 한 번에 조회하세요. 2) '@EntityGraph' 어노테이션을 적용하세요. 3) 조회 메서드에 '@Transactional(readOnly = true)'를 선언하여 영속성 세션을 유지하세요."
+		case "TransientPropertyValueException":
+			return "1) 부모 엔티티의 연관관계 어노테이션(@OneToMany, @ManyToOne 등)에 'cascade = CascadeType.ALL' 또는 'CascadeType.PERSIST'를 추가하세요. 2) 자식 엔티티를 부모보다 먼저 repository.save() 하세요."
+		case "NodeTypeError":
+			if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+				return fmt.Sprintf("1) [%s:%d] 프로퍼티 접근 전 옵셔널 체이닝(obj?.field)을 적용하세요. 2) 객체가 undefined/null인지 유효성 검증(if (!obj) ...) 로직을 보강하세요.", inc.CulpritCode.File, inc.CulpritCode.Line)
+			}
+			return "1) 프로퍼티 접근 전 옵셔널 체이닝(obj?.field)을 적용하세요. 2) 객체가 undefined/null인지 유효성 검증(if (!obj) ...) 로직을 보강하세요."
+		case "NodeUnhandledPromiseRejection":
+			return "1) 모든 async 함수 호출에 'await'를 누락하지 않았는지 확인하세요. 2) 비동기 호출을 try/catch 블록으로 감싸거나 Promise 뒤에 '.catch(err => ...)' 에러 핸들러를 반드시 연결하세요."
+		case "NodeESMMismatch":
+			return "1) package.json에 '\"type\": \"module\"'을 선언하세요. 2) CommonJS 전용 파일은 확장자를 '.cjs'로 변경하세요. 3) TypeScript의 경우 tsconfig.json에서 'moduleResolution'을 'NodeNext'로 설정하세요."
+		case "NodePrismaError", "NodePrismaInitFailed":
+			return "1) 중복 키 위반인 경우 삽입 전 findUnique 검증 또는 upsert() 구문을 사용하세요. 2) DATABASE_URL 환경변수 및 K8s Service DNS 연결성을 점검하세요."
 		default:
 			return "직전 컨테이너 로그 및 종료 코드를 확인하여 애플리케이션 설정 및 파드 리소스 사양을 점검하세요."
 		}
@@ -598,6 +734,22 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 			locStr = fmt.Sprintf("[%s:%d] ", inc.CulpritCode.File, inc.CulpritCode.Line)
 		}
 		return fmt.Sprintf("1) Wrap %scritical logic in try-except %s block with fallback or retry logic. 2) Implement strict input schema validation to prevent invalid payloads from triggering unhandled crashes.", locStr, errName)
+	case "CircularImportError":
+		return "1) Move circular import inside function scope, 2) use 'if typing.TYPE_CHECKING:' for type annotations, or 3) refactor shared models into a separate module."
+	case "SpringCircularDependency":
+		return "1) Add '@Lazy' on the injected dependency, 2) extract shared logic into a third service bean, or 3) set 'spring.main.allow-circular-references: true' in application.yml."
+	case "LazyInitializationException":
+		return "1) Use 'JOIN FETCH' in JPQL queries, 2) apply '@EntityGraph', or 3) keep persistence session open with '@Transactional(readOnly = true)'."
+	case "TransientPropertyValueException":
+		return "1) Add 'cascade = CascadeType.ALL' or 'CascadeType.PERSIST' to relation mapping, or 2) persist child entity before saving parent."
+	case "NodeTypeError":
+		return "1) Use optional chaining (obj?.prop) before property access, 2) add null/undefined checks before calling methods."
+	case "NodeUnhandledPromiseRejection":
+		return "1) Ensure all async functions are awaited inside try/catch blocks, 2) attach '.catch()' handlers to all Promises."
+	case "NodeESMMismatch":
+		return "1) Set '\"type\": \"module\"' in package.json, 2) rename CommonJS files to '.cjs', or 3) set 'moduleResolution: NodeNext' in tsconfig.json."
+	case "NodePrismaError", "NodePrismaInitFailed":
+		return "1) Use prisma.model.upsert() for unique constraint violations, 2) verify DATABASE_URL and Kubernetes cluster DNS."
 	default:
 		return "Inspect previous container logs and verify pod resource limits and application configurations."
 	}
