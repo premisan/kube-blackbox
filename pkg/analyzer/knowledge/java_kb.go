@@ -149,6 +149,17 @@ func AnalyzeJavaDeepCrash(logs string) *JavaDeepAnalysis {
 	// 5. Spring / JPA / Hikari Domain Rules
 	detectJavaDomainRules(logs, analysis)
 
+	// Validate whether this is genuinely a Java / JVM crash.
+	isGenuineJavaCrash := len(frames) > 0 ||
+		analysis.TopExceptionClass != "" ||
+		analysis.NativeCrashFrame != "" ||
+		analysis.SummaryKo != "" ||
+		len(analysis.CircularBeans) > 0
+
+	if !isGenuineJavaCrash {
+		return nil
+	}
+
 	return analysis
 }
 

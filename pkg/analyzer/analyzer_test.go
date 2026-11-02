@@ -1602,3 +1602,96 @@ func TestDiagnose_PHPDeepCrash(t *testing.T) {
 		t.Fatalf("expected culprit code /var/www/html/app/Services/ReportGenerator.php:245, got: %+v", ev.CulpritCode)
 	}
 }
+
+func TestDiagnose_ClickHouseGracePeriodNotNode(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(137)
+	graceSec := int64(30)
+	startedAt := metav1.NewTime(time.Now().Add(-69 * time.Second))
+	finishedAt := metav1.Now()
+
+	logs := `
+16. ? @ 0x00007acd2f5d81c4
+17. ? @ 0x00007acd2f657ac0
+ (version 25.2.1.3085 (official build))
+2026.10.29 17:10:33.131931 [ 43 ] {} <Information> Application: Closed all listening sockets.
+2026.10.29 17:10:33.132186 [ 43 ] {} <Information> Application: Closed connections.
+2026.10.29 17:10:33.132861 [ 43 ] {} <Information> Application: Stopping AsyncLoader.
+2026.10.29 17:10:33.133135 [ 43 ] {} <Information> CgroupsMemoryUsageObserver: Stopped cgroup current memory usage observer thread
+2026.10.29 17:10:33.144490 [ 43 ] {} <Information> Application: Shutting down storages.
+2026.10.29 17:10:33.298563 [ 214 ] {} <Information> system.latency_log (027618c1-67e1-4506-86e3-f7305b726925) (MergerMutator): Selected 2 parts from 202610_2646230_2650088_3086 to 202610_2650089_2650089_0. Merge selecting phase took: 0ms
+2026.10.29 17:10:33.354306 [ 211 ] {} <Error> system.text_log: Error occurred at merger mutator
+`
+	input := DiagnosticInput{
+		ContainerName: "clickhouse",
+		Pod: &corev1.Pod{
+			Spec: corev1.PodSpec{
+				TerminationGracePeriodSeconds: &graceSec,
+			},
+		},
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "clickhouse",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode:   exitCode,
+					Reason:     "Error",
+					StartedAt:  startedAt,
+					FinishedAt: finishedAt,
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause == "NodeTypeError" || ev.MatchedLogPattern == "NodeDeepCrash" {
+		t.Fatalf("ClickHouse container should NOT be diagnosed as NodeTypeError or NodeDeepCrash! Got RootCause: %s, MatchedPattern: %s", diag.RootCause, ev.MatchedLogPattern)
+	}
+	if diag.RootCause != "GracefulShutdownTimeout" {
+		t.Fatalf("expected GracefulShutdownTimeout, got: %s", diag.RootCause)
+	}
+}
+
+func TestDiagnose_FlaskGunicornShutdownNotNode(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(0)
+
+	logs := `
+connected to AWS IoT
+[2026-10-30 02:28:36 +0900] [9] [INFO] Worker exiting (pid: 9)
+connecting to IoT FLASK_ENV production AWS a2xjzp4d3ro6zs-ats.iot.ap-northeast-2.amazonaws.com
+connect iot aws
+connected to AWS IoT
+[2026-10-30 02:28:36 +0900] [8] [INFO] Worker exiting (pid: 8)
+connecting to IoT FLASK_ENV production AWS a2xjzp4d3ro6zs-ats.iot.ap-northeast-2.amazonaws.com
+connect iot aws
+connected to AWS IoT
+[2026-10-30 02:28:37 +0900] [7] [INFO] Worker exiting (pid: 7)
+connecting to IoT FLASK_ENV production AWS a2xjzp4d3ro6zs-ats.iot.ap-northeast-2.amazonaws.com
+connect iot aws
+connected to AWS IoT
+[2026-10-30 02:28:46 +0900] [1] [INFO] Shutting down: Master
+Error occurred at shutdown: None
+`
+	input := DiagnosticInput{
+		ContainerName: "webserver",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "webserver",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+					Reason:   "Completed",
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause == "NodeTypeError" || ev.MatchedLogPattern == "NodeDeepCrash" {
+		t.Fatalf("Python/Flask webserver should NOT be diagnosed as NodeTypeError or NodeDeepCrash! Got RootCause: %s, MatchedPattern: %s", diag.RootCause, ev.MatchedLogPattern)
+	}
+	if diag.RootCause != "ProcessExitedNormally" {
+		t.Fatalf("expected ProcessExitedNormally, got: %s", diag.RootCause)
+	}
+}

@@ -59,3 +59,44 @@ func TestAnalyzeNodeDeepCrash_NestJSDependency(t *testing.T) {
 		t.Errorf("expected non-empty localized summary")
 	}
 }
+
+func TestAnalyzeNodeDeepCrash_FalsePositivePrevention(t *testing.T) {
+	// Case 1: ClickHouse server logs containing "Error" and words with "at "
+	clickhouseLogs := `
+16. ? @ 0x00007acd2f5d81c4
+17. ? @ 0x00007acd2f657ac0
+ (version 25.2.1.3085 (official build))
+2026.10.29 17:10:33.131931 [ 43 ] {} <Information> Application: Closed all listening sockets.
+2026.10.29 17:10:33.132186 [ 43 ] {} <Information> Application: Closed connections.
+2026.10.29 17:10:33.132861 [ 43 ] {} <Information> Application: Stopping AsyncLoader.
+2026.10.29 17:10:33.133135 [ 43 ] {} <Information> CgroupsMemoryUsageObserver: Stopped cgroup current memory usage observer thread
+2026.10.29 17:10:33.144490 [ 43 ] {} <Information> Application: Shutting down storages.
+2026.10.29 17:10:33.298563 [ 214 ] {} <Information> system.latency_log (027618c1-67e1-4506-86e3-f7305b726925) (MergerMutator): Selected 2 parts from 202610_2646230_2650088_3086 to 202610_2650089_2650089_0. Merge selecting phase took: 0ms
+2026.10.29 17:10:33.354306 [ 211 ] {} <Error> system.text_log: Merge failed at line 100
+`
+	if analysis := AnalyzeNodeDeepCrash(clickhouseLogs); analysis != nil {
+		t.Errorf("expected nil for ClickHouse non-Node.js logs, got %+v", analysis)
+	}
+
+	// Case 2: Python / Gunicorn / Flask webserver shutdown logs
+	flaskLogs := `
+connected to AWS IoT
+[2026-10-30 02:28:36 +0900] [9] [INFO] Worker exiting (pid: 9)
+connecting to IoT FLASK_ENV production AWS a2xjzp4d3ro6zs-ats.iot.ap-northeast-2.amazonaws.com
+connect iot aws
+connected to AWS IoT
+[2026-10-30 02:28:36 +0900] [8] [INFO] Worker exiting (pid: 8)
+connecting to IoT FLASK_ENV production AWS a2xjzp4d3ro6zs-ats.iot.ap-northeast-2.amazonaws.com
+connect iot aws
+connected to AWS IoT
+[2026-10-30 02:28:37 +0900] [7] [INFO] Worker exiting (pid: 7)
+connecting to IoT FLASK_ENV production AWS a2xjzp4d3ro6zs-ats.iot.ap-northeast-2.amazonaws.com
+connect iot aws
+connected to AWS IoT
+[2026-10-30 02:28:46 +0900] [1] [INFO] Shutting down: Master
+Error occurred at shutdown: None
+`
+	if analysis := AnalyzeNodeDeepCrash(flaskLogs); analysis != nil {
+		t.Errorf("expected nil for Python/Flask webserver logs, got %+v", analysis)
+	}
+}

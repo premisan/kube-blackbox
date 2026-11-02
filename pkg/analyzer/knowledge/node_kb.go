@@ -133,6 +133,23 @@ func AnalyzeNodeDeepCrash(logs string) *NodeDeepAnalysis {
 	// 5. Domain Rules
 	detectNodeDomainRules(logs, analysis)
 
+	// Validate whether this is genuinely a Node.js / V8 crash.
+	// If there are no V8 stack frames, no recognized Node domain rules,
+	// and no Node-specific markers (FATAL ERROR, UnhandledRejection, etc.),
+	// return nil to avoid false-positive classifications for other runtimes.
+	isGenuineNodeCrash := len(frames) > 0 ||
+		analysis.IsUnhandledRejection ||
+		analysis.PrismaCode != "" ||
+		analysis.SummaryKo != "" ||
+		analysis.Framework == "NestJS" ||
+		strings.Contains(logs, "FATAL ERROR:") ||
+		strings.Contains(logs, "ERR_REQUIRE_ESM") ||
+		strings.Contains(logs, "ERR_HTTP_HEADERS_SENT")
+
+	if !isGenuineNodeCrash {
+		return nil
+	}
+
 	return analysis
 }
 

@@ -998,6 +998,7 @@ type LogAnalysisResult struct {
 var (
 	domainRulesIndex map[string][]*LogRule
 	allIndexedRules  []*LogRule
+	v8StackFrameRegex = regexp.MustCompile(`(?m)^\s+at\s+`)
 )
 
 func init() {
@@ -1352,15 +1353,49 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 	}
 
 	// 3. Node.js Deep Analysis
-	if strings.Contains(processedLogs, "at ") && (strings.Contains(processedLogs, "Error") || strings.Contains(processedLogs, "unhandledRejection") || strings.Contains(processedLogs, "UnhandledPromiseRejection") || strings.Contains(processedLogs, "FATAL ERROR:")) {
+	hasV8Stack := v8StackFrameRegex.MatchString(processedLogs)
+	hasNodeKeywords := strings.Contains(processedLogs, "unhandledRejection") ||
+		strings.Contains(processedLogs, "UnhandledPromiseRejection") ||
+		strings.Contains(processedLogs, "FATAL ERROR:") ||
+		strings.Contains(processedLogs, "ERR_REQUIRE_ESM") ||
+		strings.Contains(processedLogs, "ERR_HTTP_HEADERS_SENT") ||
+		strings.Contains(processedLogs, "PrismaClient") ||
+		strings.Contains(processedLogs, "Nest can't resolve dependencies") ||
+		strings.Contains(processedLogs, "exports is not defined in ES module scope")
+
+	if hasV8Stack || hasNodeKeywords {
 		nodeDeep := knowledge.AnalyzeNodeDeepCrash(processedLogs)
 		if nodeDeep != nil {
 			if res == nil || res.MatchedRule == nil {
+				rootCause := "NodeUnhandledException"
+				if nodeDeep.ErrorClass != "" {
+					switch nodeDeep.ErrorClass {
+					case "TypeError":
+						rootCause = "NodeTypeError"
+					case "ReferenceError":
+						rootCause = "NodeReferenceError"
+					case "RangeError":
+						rootCause = "NodeRangeError"
+					case "SyntaxError":
+						rootCause = "NodeSyntaxError"
+					default:
+						rootCause = "Node" + nodeDeep.ErrorClass
+					}
+				}
+				if nodeDeep.IsUnhandledRejection {
+					rootCause = "NodeUnhandledPromiseRejection"
+				}
+				if nodeDeep.PrismaCode != "" {
+					rootCause = "NodePrismaError"
+				}
+				if strings.Contains(processedLogs, "exports is not defined") || strings.Contains(processedLogs, "require is not defined") || strings.Contains(processedLogs, "Cannot use import statement") {
+					rootCause = "NodeESMMismatch"
+				}
 				res = &LogAnalysisResult{
 					MatchedRule: &LogRule{
 						Name:              "NodeDeepCrash",
 						Category:          "Application",
-						RootCause:         "NodeTypeError",
+						RootCause:         rootCause,
 						Confidence:        "High",
 						RecommendedAction: "Inspect Node.js stack trace and error origin.",
 					},
@@ -1368,6 +1403,9 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 					Category:       "Application",
 					Snippet:        tailSnippet,
 				}
+			}
+			if nodeDeep.ErrorClass != "" && res.ErrorClass == "" {
+				res.ErrorClass = nodeDeep.ErrorClass
 			}
 			if nodeDeep.IsUnhandledRejection {
 				res.MatchedRule.RootCause = "NodeUnhandledPromiseRejection"
