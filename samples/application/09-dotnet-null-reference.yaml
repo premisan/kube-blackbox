@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sample-dotnet-crash
+  labels:
+    app: sample-dotnet-crash
+    category: application
+spec:
+  restartPolicy: Always
+  containers:
+    - name: dotnet-api
+      image: busybox:latest
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "[INFO] Starting .NET Core Web API on port 5000..."
+          sleep 2
+          echo "[INFO] Handling incoming HTTP request GET /api/v1/orders/12345"
+          sleep 1
+          echo "Unhandled exception. System.NullReferenceException: Object reference not set to an instance of an object." >&2
+          echo "   at OrderService.Controllers.OrderController.GetOrder(Int32 id) in /src/Controllers/OrderController.cs:line 48" >&2
+          echo "   at lambda_method12(Closure, Object, Object[])" >&2
+          echo "   at Microsoft.AspNetCore.Mvc.Infrastructure.ActionMethodExecutor.SyncActionResultExecutor.Execute(ActionContext actionContext, IActionResultTypeMapper mapper, ObjectMethodExecutor executor, Object controller, Object[] arguments)" >&2
+          exit 1
