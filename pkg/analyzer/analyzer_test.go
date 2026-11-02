@@ -1368,6 +1368,9 @@ com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException: Deadlock found w
 	if ev.ErrorClass != "MySQL_1213_Deadlock" {
 		t.Fatalf("expected MySQL_1213_Deadlock, got: %s", ev.ErrorClass)
 	}
+	if !strings.Contains(diag.RecommendedAction, "ORDER BY") && !strings.Contains(diag.RecommendedAction, "순환 락") {
+		t.Fatalf("expected deadlock action in RecommendedAction, got: %s", diag.RecommendedAction)
+	}
 }
 
 func TestDiagnose_DBDriver_PostgresInFailedTx(t *testing.T) {
@@ -1399,6 +1402,9 @@ psycopg2.errors.InFailedSqlTransaction: current transaction is aborted, commands
 	}
 	if ev.ErrorClass != "PostgreSQL_25P02_InFailedTx" {
 		t.Fatalf("expected PostgreSQL_25P02_InFailedTx, got: %s", ev.ErrorClass)
+	}
+	if !strings.Contains(diag.RecommendedAction, "ROLLBACK") {
+		t.Fatalf("expected ROLLBACK in RecommendedAction, got: %s", diag.RecommendedAction)
 	}
 }
 

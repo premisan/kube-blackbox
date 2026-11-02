@@ -254,8 +254,12 @@ func (e *DiagnosticEngine) Diagnose(input DiagnosticInput) (diagnosis observerv1
 		if logRes.ErrorClass != "" && logRes.ErrorClass != "PythonException" && logRes.ErrorClass != "FatalError" {
 			detailForI18n = logRes.ErrorClass
 		}
+		actionToUse := logRes.RecommendedAction
+		if actionToUse == "" && logRes.MatchedRule != nil {
+			actionToUse = logRes.MatchedRule.RecommendedAction
+		}
 		setDiag(&diagnosis, logRes.Category, logRes.MatchedRule.RootCause, logRes.MatchedRule.Confidence,
-			logRes.Summary, logRes.MatchedRule.RecommendedAction, lang, detailForI18n)
+			logRes.Summary, actionToUse, lang, detailForI18n)
 		return diagnosis, evidence
 	}
 

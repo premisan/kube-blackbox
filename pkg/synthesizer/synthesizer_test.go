@@ -621,3 +621,114 @@ func TestSynthesizer_PHPDiagnostics(t *testing.T) {
 		t.Fatalf("expected culprit code in fix, got: %s", result.SuggestedFix)
 	}
 }
+
+func TestSynthesizer_SemanticCatalog_MySQLDeadlock(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "order-service-app",
+		ContainerName: "api",
+		ExitCode:      &exitCode,
+		RootCause:     "MySQLDeadlock",
+		ErrorClass:    "MySQL_1213_Deadlock",
+		Category:      "Dependency",
+		Confidence:    "High",
+		CulpritCode: &observerv1alpha1.CulpritCode{
+			Language: "Java",
+			File:     "PaymentService.java",
+			Line:     142,
+			Function: "settle",
+		},
+		Language: "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 causal chain steps, got: %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.SuggestedFix, "ORDER BY") && !strings.Contains(result.SuggestedFix, "순환 락") {
+		t.Fatalf("expected deadlock fix to mention ORDER BY or lock ordering, got: %s", result.SuggestedFix)
+	}
+	if !strings.Contains(result.InferredContext, "PaymentService.java:142") {
+		t.Fatalf("expected culprit code in inferred context, got: %s", result.InferredContext)
+	}
+}
+
+func TestSynthesizer_SemanticCatalog_PostgresInFailedTx(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "default",
+		PodName:       "billing-worker",
+		ContainerName: "worker",
+		ExitCode:      &exitCode,
+		RootCause:     "PostgresInFailedSQLTransaction",
+		ErrorClass:    "PostgreSQL_25P02_InFailedTx",
+		Category:      "Dependency",
+		Confidence:    "High",
+		CulpritCode: &observerv1alpha1.CulpritCode{
+			Language: "Python",
+			File:     "billing.py",
+			Line:     88,
+		},
+		Language: "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(result.SuggestedFix, "ROLLBACK") && !strings.Contains(result.SuggestedFix, "SAVEPOINT") {
+		t.Fatalf("expected fix to mention ROLLBACK or SAVEPOINT, got: %s", result.SuggestedFix)
+	}
+}
+
+func TestSynthesizer_DynamicSynthesis_UnknownCustomException(t *testing.T) {
+	s := NewSynthesizer()
+	exitCode := int32(1)
+
+	incident := IncidentContext{
+		Namespace:     "production",
+		PodName:       "payment-gateway-77b",
+		ContainerName: "gateway",
+		ExitCode:      &exitCode,
+		RootCause:     "CustomPaymentTimeoutFailure",
+		ErrorClass:    "PaymentGatewayTimeoutException",
+		Category:      "Application",
+		Confidence:    "High",
+		CulpritCode: &observerv1alpha1.CulpritCode{
+			Language: "Java",
+			File:     "TossClient.java",
+			Line:     95,
+			Function: "requestApproval",
+		},
+		Language: "ko",
+	}
+
+	result, err := s.Synthesize(context.Background(), incident)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Must never fall back to generic "컨테이너 상태 이상이 감지됨" or "직전 컨테이너 로그 및 종료 코드를 확인하여..."
+	if strings.Contains(result.SuggestedFix, "직전 컨테이너 로그 및 종료 코드를 확인하여") {
+		t.Fatalf("suggested fix should not be generic fallback text: %s", result.SuggestedFix)
+	}
+	if !strings.Contains(result.SuggestedFix, "TossClient.java:95") {
+		t.Fatalf("expected culprit location in dynamically synthesized fix: %s", result.SuggestedFix)
+	}
+	if len(result.RootCauseChain) < 3 {
+		t.Fatalf("expected at least 3 dynamically synthesized chain steps, got: %d", len(result.RootCauseChain))
+	}
+	if !strings.Contains(result.RootCauseChain[0].Description, "TossClient.java:95") {
+		t.Fatalf("expected step 1 to pinpoint culprit code, got: %s", result.RootCauseChain[0].Description)
+	}
+}

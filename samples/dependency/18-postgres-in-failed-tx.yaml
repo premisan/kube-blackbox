@@ -16,10 +16,10 @@ spec:
           echo "[INFO] Starting Python background billing worker..."
           echo "[WARN] Previous INSERT query failed on unique constraint violation"
           cat << 'EOF' >&2
-Traceback (most recent call last):
-  File "/app/services/billing.py", line 88, in process_batch
-    cursor.execute("SELECT balance FROM accounts WHERE user_id = %s FOR UPDATE", (uid,))
-psycopg2.errors.InFailedSqlTransaction: current transaction is aborted, commands ignored until end of transaction block
-EOF
+          Traceback (most recent call last):
+            File "/app/services/billing.py", line 88, in process_batch
+              cursor.execute("SELECT balance FROM accounts WHERE user_id = %s FOR UPDATE", (uid,))
+          psycopg2.errors.InFailedSqlTransaction: current transaction is aborted, commands ignored until end of transaction block
+          EOF
           echo "[FATAL] Subsequent database commands rejected inside aborted transaction block without rollback. Aborting." >&2
           exit 1

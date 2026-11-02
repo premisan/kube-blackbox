@@ -6,9 +6,102 @@ import (
 	"strings"
 
 	observerv1alpha1 "github.com/premisan/kube-blackbox/api/v1alpha1"
+	"github.com/premisan/kube-blackbox/pkg/analyzer/knowledge"
 )
 
 const EngineIdentifier = "rule-synthesizer"
+
+// lookupCatalogForIncident performs O(1) multi-key lookup in the deep Semantic Catalog.
+func lookupCatalogForIncident(inc IncidentContext) (knowledge.SemanticCatalogEntry, bool) {
+	lang := inc.Language
+	if inc.CulpritCode != nil && inc.CulpritCode.Language != "" {
+		lang = inc.CulpritCode.Language
+	}
+
+	// 1. Try RootCause
+	if entry, found := knowledge.LookupSemanticCatalog(lang, inc.RootCause); found {
+		return entry, true
+	}
+	// 2. Try ErrorClass
+	if inc.ErrorClass != "" {
+		if entry, found := knowledge.LookupSemanticCatalog(lang, inc.ErrorClass); found {
+			return entry, true
+		}
+	}
+	return knowledge.SemanticCatalogEntry{}, false
+}
+
+func synthesizeDynamicCausalChain(inc IncidentContext, lang, exitCodeStr, culpritStr string) []string {
+	var steps []string
+	errName := inc.ErrorClass
+	if errName == "" {
+		errName = inc.RootCause
+	}
+	if errName == "" {
+		errName = "치명적 런타임 오류"
+	}
+
+	if lang == "ko" {
+		if culpritStr != "" {
+			steps = append(steps, fmt.Sprintf("애플리케이션 소스코드 [%s]에서 %s 오류가 발생함", culpritStr, errName))
+		} else {
+			steps = append(steps, fmt.Sprintf("애플리케이션 런타임에서 미처리 %s 오류가 발생함", errName))
+		}
+		steps = append(steps, "상위 호출 스택에 예외 처리(catch/recover) 핸들러가 누락되어 런타임 언와인딩이 최상위까지 전파됨")
+		steps = append(steps, fmt.Sprintf("비정상 종료 코드(Exit code %s)와 함께 프로세스가 강제 중단됨", exitCodeStr))
+		if len(inc.MatchedEvents) > 0 {
+			steps = append(steps, fmt.Sprintf("관련 쿠버네티스 이벤트 관측: %s", inc.MatchedEvents[0]))
+		}
+		steps = append(steps, "Kubelet이 컨테이너 비정상 종료를 감지하고 파드 재시작 정책에 따라 재기동함")
+	} else {
+		if culpritStr != "" {
+			steps = append(steps, fmt.Sprintf("Application source code [%s] triggered %s error", culpritStr, errName))
+		} else {
+			steps = append(steps, fmt.Sprintf("Application runtime encountered unhandled %s error", errName))
+		}
+		steps = append(steps, "Unhandled exception unwound the call stack without catching handlers")
+		steps = append(steps, fmt.Sprintf("Process abruptly terminated with exit code %s", exitCodeStr))
+		if len(inc.MatchedEvents) > 0 {
+			steps = append(steps, fmt.Sprintf("Correlated Kubernetes event: %s", inc.MatchedEvents[0]))
+		}
+		steps = append(steps, "Kubelet observed container crash and initiated restart per policy")
+	}
+	return steps
+}
+
+func synthesizeDynamicInferredContext(inc IncidentContext, lang, culpritStr string) string {
+	errName := inc.ErrorClass
+	if errName == "" {
+		errName = inc.RootCause
+	}
+	if lang == "ko" {
+		if culpritStr != "" {
+			return fmt.Sprintf("애플리케이션 코드 [%s] 실행 중 %s 예외가 처리되지 않아 프로세스가 비정상 종료되었습니다.", culpritStr, errName)
+		}
+		return fmt.Sprintf("애플리케이션 런타임에서 %s 예외가 처리되지 않아 프로세스가 비정상 종료되었습니다.", errName)
+	}
+	if culpritStr != "" {
+		return fmt.Sprintf("Process terminated abnormally due to unhandled %s at [%s].", errName, culpritStr)
+	}
+	return fmt.Sprintf("Process terminated abnormally due to unhandled %s.", errName)
+}
+
+func synthesizeDynamicSuggestedFix(inc IncidentContext, lang, culpritStr string) string {
+	errName := inc.ErrorClass
+	if errName == "" {
+		errName = inc.RootCause
+	}
+	if lang == "ko" {
+		if culpritStr != "" {
+			return fmt.Sprintf("1) 소스코드 [%s] 위치에 예외 처리(try-catch / defer-recover)를 추가하거나 입력 데이터 유효성을 검증하세요. 2) 상위 호출부에서 예외를 안전하게 포획(Catch)하여 서비스 연속성을 유지하세요. 3) 파드 환경변수 및 의존성 리소스 설정을 점검하세요.", culpritStr)
+		}
+		return fmt.Sprintf("1) '%s' 에러 발생 지점에 방어 코드 및 예외 처리 로직을 적용하세요. 2) 파드 로그의 직전 스택트레이스를 분석하여 잘못된 입력값이나 의존성 상태를 점검하세요.", errName)
+	}
+	if culpritStr != "" {
+		return fmt.Sprintf("1) Add exception handling (try-catch / recover) or validate input at [%s]. 2) Catch exceptions gracefully to preserve uptime. 3) Inspect pod environment variables.", culpritStr)
+	}
+	return fmt.Sprintf("1) Apply error handling and defensive checks for '%s'. 2) Inspect stack trace in container logs for invalid inputs or dependency issues.", errName)
+}
 
 // Synthesizer synthesizes factual causal chains and actionable recommendations
 // using verified execution evidence and domain-specific incident rules.
@@ -618,11 +711,16 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 			steps = append(steps, "DB 연결 거절 또는 SQL 문법/권한 오류 발생")
 			steps = append(steps, "미처리 PDOException으로 인해 PHP 프로세스가 비정상 종료됨")
 		default:
-			steps = append(steps, fmt.Sprintf("컨테이너 상태 이상이 감지됨 (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
-			if len(inc.MatchedEvents) > 0 {
-				steps = append(steps, fmt.Sprintf("관련 쿠버네티스 이벤트 확인: %s", inc.MatchedEvents[0]))
+			if catEntry, found := lookupCatalogForIncident(inc); found && len(catEntry.RootCauseChainKo) > 0 {
+				for idx, stepText := range catEntry.RootCauseChainKo {
+					if idx == 0 && culpritStr != "" && !strings.Contains(stepText, culpritStr) {
+						stepText = fmt.Sprintf("[%s] %s", culpritStr, stepText)
+					}
+					steps = append(steps, stepText)
+				}
+			} else {
+				steps = append(steps, synthesizeDynamicCausalChain(inc, lang, exitCodeStr, culpritStr)...)
 			}
-			steps = append(steps, "프로세스 종료 후 Kubelet에 의해 컨테이너가 재시작됨")
 		}
 	} else {
 		// English
@@ -1081,11 +1179,16 @@ func buildRootCauseChain(inc IncidentContext, lang string) []observerv1alpha1.Ch
 			steps = append(steps, "Database connection refused, timeout, or authentication failure occurred")
 			steps = append(steps, "Unhandled PDOException caused process termination")
 		default:
-			steps = append(steps, fmt.Sprintf("Container termination observed (RootCause: %s, ExitCode: %s)", inc.RootCause, exitCodeStr))
-			if len(inc.MatchedEvents) > 0 {
-				steps = append(steps, fmt.Sprintf("Correlated K8s Event: %s", inc.MatchedEvents[0]))
+			if catEntry, found := lookupCatalogForIncident(inc); found && len(catEntry.RootCauseChainEn) > 0 {
+				for idx, stepText := range catEntry.RootCauseChainEn {
+					if idx == 0 && culpritStr != "" && !strings.Contains(stepText, culpritStr) {
+						stepText = fmt.Sprintf("[%s] %s", culpritStr, stepText)
+					}
+					steps = append(steps, stepText)
+				}
+			} else {
+				steps = append(steps, synthesizeDynamicCausalChain(inc, lang, exitCodeStr, culpritStr)...)
 			}
-			steps = append(steps, "Container exited and was restarted by Kubelet")
 		}
 	}
 
@@ -1109,13 +1212,20 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 		}
 	}
 
-	if lang == "ko" {
-		if inc.RecurrentFailure && inc.ConsecutiveFailures >= 2 {
+	if inc.RecurrentFailure && inc.ConsecutiveFailures >= 2 {
+		if lang == "ko" {
 			return fmt.Sprintf("동일한 %s 원인으로 %d번째 연속 비정상 종료되었습니다 (만성 장애 루프 감지)%s.", inc.RootCause, inc.ConsecutiveFailures, culpritStr)
 		}
-		if inc.FailureTransition != "" {
+		return fmt.Sprintf("Recurrent failure loop detected: %d consecutive terminations due to %s%s.", inc.ConsecutiveFailures, inc.RootCause, culpritStr)
+	}
+	if inc.FailureTransition != "" {
+		if lang == "ko" {
 			return fmt.Sprintf("이전 재시작 장애(%s)의 연쇄 여파로 인해 %s 원인으로 비정상 종료되었습니다%s.", inc.FailureTransition, inc.RootCause, culpritStr)
 		}
+		return fmt.Sprintf("Cascading failure transition from %s to %s%s.", inc.FailureTransition, inc.RootCause, culpritStr)
+	}
+
+	if lang == "ko" {
 
 		switch inc.RootCause {
 		case "GracefulShutdownTimeout":
@@ -1337,7 +1447,7 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 		case "MySQLTooManyConnections":
 			return "MySQL 서버 동시 연결 한도(max_connections) 초과로 신규 커넥션이 거부되었습니다 (Error 1040)."
 		case "MySQLDeadlock":
-			return "MySQL InnoDB 트랜잭션 상호 잠금(Deadlock)이 감지되어 트랜잭션이 강제 롤백되었습니다 (Error 1213)."
+			return fmt.Sprintf("MySQL InnoDB 트랜잭션 상호 잠금(Deadlock)이 감지되어 트랜잭션이 강제 롤백되었습니다 (Error 1213)%s.", culpritStr)
 		case "MySQLCommunicationsLinkFailure":
 			return "MySQL 유휴 연결 시간(wait_timeout) 초과 또는 소켓 비정상 종료로 통신 링크가 단절되었습니다."
 		case "PostgresTooManyConnections":
@@ -1365,7 +1475,14 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 		case "PHPPDOException":
 			return fmt.Sprintf("PHP PDO 데이터베이스 연결 실패 또는 SQL 오류로 인해 프로세스가 중단되었습니다%s.", culpritStr)
 		default:
-			return fmt.Sprintf("컨테이너가 %s 원인으로 비정상 종료되었습니다%s.", inc.RootCause, culpritStr)
+			if catEntry, found := lookupCatalogForIncident(inc); found && catEntry.InferredContextKo != "" {
+				res := catEntry.InferredContextKo
+				if culpritStr != "" && !strings.Contains(res, culpritStr) {
+					res = fmt.Sprintf("%s%s", res, culpritStr)
+				}
+				return res
+			}
+			return synthesizeDynamicInferredContext(inc, lang, culpritStr)
 		}
 	}
 
@@ -1561,7 +1678,7 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 	case "MySQLTooManyConnections":
 		return "MySQL server max_connections limit exceeded, rejecting new client connections (Error 1040)."
 	case "MySQLDeadlock":
-		return "MySQL InnoDB transaction deadlock detected and rolled back automatically (Error 1213)."
+		return fmt.Sprintf("MySQL InnoDB transaction deadlock detected and rolled back automatically (Error 1213)%s.", culpritStr)
 	case "MySQLCommunicationsLinkFailure":
 		return "MySQL communications link failure due to server wait_timeout expiration or closed socket."
 	case "PostgresTooManyConnections":
@@ -1589,7 +1706,14 @@ func buildInferredContext(inc IncidentContext, lang string) string {
 	case "PHPPDOException":
 		return fmt.Sprintf("PHP database connection or query failed via PDO%s.", culpritStr)
 	default:
-		return fmt.Sprintf("Container terminated due to %s%s.", inc.RootCause, culpritStr)
+		if catEntry, found := lookupCatalogForIncident(inc); found && catEntry.InferredContextEn != "" {
+			res := catEntry.InferredContextEn
+			if culpritStr != "" && !strings.Contains(res, culpritStr) {
+				res = fmt.Sprintf("%s%s", res, culpritStr)
+			}
+			return res
+		}
+		return synthesizeDynamicInferredContext(inc, lang, culpritStr)
 	}
 }
 
@@ -1605,6 +1729,15 @@ func buildSuggestedFix(inc IncidentContext, lang string) string {
 }
 
 func getBaseSuggestedFix(inc IncidentContext, lang string) string {
+	culpritStr := ""
+	if inc.CulpritCode != nil && inc.CulpritCode.File != "" {
+		if inc.CulpritCode.Line > 0 {
+			culpritStr = fmt.Sprintf("%s:%d", inc.CulpritCode.File, inc.CulpritCode.Line)
+		} else {
+			culpritStr = inc.CulpritCode.File
+		}
+	}
+
 	if lang == "ko" {
 		switch inc.RootCause {
 		case "GracefulShutdownTimeout":
@@ -1870,7 +2003,10 @@ func getBaseSuggestedFix(inc IncidentContext, lang string) string {
 		case "PHPPDOException":
 			return "1) DB 접속 환경변수(DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD)를 점검하세요. 2) 데이터베이스 컨테이너/서비스의 가동 상태와 NetworkPolicy를 확인하세요."
 		default:
-			return "직전 컨테이너 로그 및 종료 코드를 확인하여 애플리케이션 설정 및 파드 리소스 사양을 점검하세요."
+			if catEntry, found := lookupCatalogForIncident(inc); found && catEntry.SuggestedFixKo != "" {
+				return catEntry.SuggestedFixKo
+			}
+			return synthesizeDynamicSuggestedFix(inc, lang, culpritStr)
 		}
 	}
 
@@ -2090,6 +2226,9 @@ func getBaseSuggestedFix(inc IncidentContext, lang string) string {
 	case "PHPPDOException":
 		return "1) Check DB connection environment variables. 2) Verify database pod availability and network policies."
 	default:
-		return "Inspect previous container logs and verify pod resource limits and application configurations."
+		if catEntry, found := lookupCatalogForIncident(inc); found && catEntry.SuggestedFixEn != "" {
+			return catEntry.SuggestedFixEn
+		}
+		return synthesizeDynamicSuggestedFix(inc, lang, culpritStr)
 	}
 }

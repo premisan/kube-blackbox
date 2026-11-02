@@ -16,15 +16,15 @@ spec:
           echo "[INFO] Starting Spring Boot OrderService..."
           echo "[INFO] Processing concurrent order settlement transaction..."
           cat << 'EOF' >&2
-2026-11-02 02:40:00.123 [http-nio-8080-exec-4] ERROR org.hibernate.engine.jdbc.spi.SqlExceptionHelper - Deadlock found when trying to get lock; try restarting transaction
-2026-11-02 02:40:00.124 [http-nio-8080-exec-4] ERROR c.e.order.service.PaymentService - Failed to process settlement for order #8491
-com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException: Deadlock found when trying to get lock; try restarting transaction
-	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:121)
-	at com.mysql.cj.jdbc.exceptions.SQLError.createMySQLTransactionRollbackException(SQLError.java:112)
-	at com.mysql.cj.jdbc.MysqlIO.checkErrorPacket(MysqlIO.java:4036)
-	at com.mysql.cj.jdbc.ClientPreparedStatement.executeInternal(ClientPreparedStatement.java:930)
-	at org.hibernate.engine.jdbc.internal.ResultSetReturnImpl.executeUpdate(ResultSetReturnImpl.java:208)
-	at com.example.order.service.PaymentService.settle(PaymentService.java:142)
-EOF
+          2026-11-02 02:40:00.123 [http-nio-8080-exec-4] ERROR org.hibernate.engine.jdbc.spi.SqlExceptionHelper - Deadlock found when trying to get lock; try restarting transaction
+          2026-11-02 02:40:00.124 [http-nio-8080-exec-4] ERROR c.e.order.service.PaymentService - Failed to process settlement for order #8491
+          com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException: Deadlock found when trying to get lock; try restarting transaction
+          	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:121)
+          	at com.mysql.cj.jdbc.exceptions.SQLError.createMySQLTransactionRollbackException(SQLError.java:112)
+          	at com.mysql.cj.jdbc.MysqlIO.checkErrorPacket(MysqlIO.java:4036)
+          	at com.mysql.cj.jdbc.ClientPreparedStatement.executeInternal(ClientPreparedStatement.java:930)
+          	at org.hibernate.engine.jdbc.internal.ResultSetReturnImpl.executeUpdate(ResultSetReturnImpl.java:208)
+          	at com.example.order.service.PaymentService.settle(PaymentService.java:142)
+          EOF
           echo "[FATAL] Transaction rolled back due to unhandled deadlock exception. Exiting." >&2
           exit 1

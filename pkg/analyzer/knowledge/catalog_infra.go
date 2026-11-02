@@ -1,0 +1,288 @@
+package knowledge
+
+func init() {
+	loadInfraSemanticCatalog()
+}
+
+func loadInfraSemanticCatalog() {
+	entries := []SemanticCatalogEntry{
+		// ==================== Linux Signals ====================
+		{
+			ErrorClass: "SegmentationFault",
+			Language:   "System",
+			Category:   "Application",
+			RootCause:  "SegmentationFault",
+			SummaryKo:  "프로세스가 할당되지 않았거나 보호된 가상 메모리 주소(Invalid Pointer, 0x0)를 역참조하여 Linux 커널이 SIGSEGV(139) 신호로 즉시 사살했습니다.",
+			ActionKo:   "1) C/C++ 네이티브 모듈, JNI, CGO, Rust 바인딩 또는 Unsafe 포인터 연산을 점검하세요. 2) 'gdb' 또는 coredump 분석을 위해 컨테이너 ulimit -c unlimited 및 코어 덤프 경로를 설정하세요. 3) AddressSanitizer(ASan)를 적용하여 빌드하세요.",
+			SummaryEn:  "Linux SIGSEGV (Exit code 139): segmentation fault caused by invalid virtual memory access.",
+			ActionEn:   "1) Audit native C/C++, JNI, CGO, or unsafe pointer dereferences. 2) Enable core dumps or analyze with GDB. 3) Recompile with AddressSanitizer (ASan).",
+			RootCauseChainKo: []string{
+				"네이티브 바이너리 또는 네이티브 확장 모듈이 해제된 메모리 또는 0x0 널 주소 역참조 시도",
+				"CPU MMU(Memory Management Unit)가 유효하지 않은 가상 메모리 페이지 폴트(Page Fault)를 감지함",
+				"Linux OS 커널이 프로세스에 SIGSEGV(139) 신호를 전송하여 메모리 보호를 위해 즉시 강제 사살함",
+				"Kubelet이 Exit Code 139 비정상 종료를 감지하고 파드를 재시작함",
+			},
+			RootCauseChainEn: []string{
+				"Native machine instruction executed memory dereference against an unmapped or protected address",
+				"Hardware MMU triggered an unrecoverable page fault exception to the kernel",
+				"Linux kernel delivered SIGSEGV (signal 11 / exit 139) to immediately terminate the process",
+				"Kubelet recorded non-zero exit code 139 and initiated container restart",
+			},
+			InferredContextKo: "TensorFlow/PyTorch C++ 백엔드, SQLite CGO 드라이버, Node.js 네이티브 애드온 또는 C 바이트코드 결함으로 발생했습니다.",
+			SuggestedFixKo:    "1) 파드 spec에 'securityContext.sysctls'를 통해 coredump를 활성화하고 덤프 파일을 분석하세요. 2) 네이티브 모듈 버전을 안정화된 최신 릴리즈로 업그레이드하세요.",
+		},
+		{
+			ErrorClass: "HeapCorruption",
+			Language:   "System",
+			Category:   "Application",
+			RootCause:  "HeapCorruption",
+			SummaryKo:  "glibc 메모리 할당자에서 Double Free(이중 해제) 또는 힙 경계 침범(Heap buffer overflow)이 감지되어 SIGABRT(134) 신호로 프로세스가 긴급 중단되었습니다.",
+			ActionKo:   "1) C/C++ 네이티브 라이브러리의 free() / delete 호출부를 전수 점검하세요. 2) Valgrind Memcheck 또는 ASan을 실행하여 힙 오염 지점을 특정하세요. 3) 'MALLOC_CHECK_=3' 환경변수로 할당 검사를 강화하세요.",
+			SummaryEn:  "glibc heap corruption detected: double free or corruption (out of memory boundary), aborted via SIGABRT (Exit code 134).",
+			ActionEn:   "1) Audit dynamic memory free/delete calls in native modules. 2) Profile with Valgrind Memcheck or AddressSanitizer. 3) Set MALLOC_CHECK_=3 for diagnostics.",
+			RootCauseChainKo: []string{
+				"동적 메모리 할당 블록의 헤더(Chunk Boundary)가 버퍼 오버플로우로 덮어씌워지거나 이미 해제된 포인터 재해제(Double Free) 발생",
+				"glibc malloc/free 라이브러리가 힙 제어 구조체의 무결성 파괴를 감지함",
+				"glibc가 보안 취약점 방지를 위해 abort()를 호출하고 OS 커널이 SIGABRT(134) 신호로 강제 사살함",
+			},
+			InferredContextKo: "CGO/JNI 바인딩에서 포인터 라이프사이클 관리가 어긋나 메모리 힙이 오염된 상태에서 크래시된 장애입니다.",
+			SuggestedFixKo:    "1) 네이티브 라이브러리 빌드 시 '-fsanitize=address' 플래그를 추가하여 메모리 침범 라인을 추적하세요.",
+		},
+		{
+			ErrorClass: "BusError",
+			Language:   "System",
+			Category:   "Application",
+			RootCause:  "BusError",
+			SummaryKo:  "정렬되지 않은 메모리 주소 접근(Unaligned memory access) 또는 디스크 공간 부족 상태에서 mmap 파일에 접근하여 SIGBUS(135) 신호로 종료되었습니다.",
+			ActionKo:   "1) 공유 메모리(/dev/shm) 볼륨 크기를 확인하고 emptyDir medium: Memory로 증설하세요. 2) mmap 매핑된 파일이 다른 프로세스에 의해 truncate(축소)되었거나 디스크가 가득 찼는지 확인하세요.",
+			SummaryEn:  "Linux SIGBUS (Exit code 135): bus error caused by unaligned memory access or truncated mmap file.",
+			ActionEn:   "1) Mount larger emptyDir medium: Memory for /dev/shm. 2) Check if memory-mapped files were truncated or disk filled up.",
+			RootCauseChainKo: []string{
+				"애플리케이션이 mmap() 시스템 콜로 파일을 메모리에 매핑함",
+				"디스크 여유 공간 고갈(ENOSPC) 또는 외부 파일 축소로 인해 매핑된 물리 페이지를 디스크에서 읽거나 쓰지 못함",
+				"커널이 I/O 페이지 폴트 실패를 감지하고 SIGBUS(135) 신호를 프로세스에 전달함",
+			},
+			InferredContextKo: "PyTorch Dataloader나 Chrome/Puppeteer가 /dev/shm 공간 부족 상태에서 mmap을 쓰다 즉사한 상황입니다.",
+			SuggestedFixKo:    "1) 파드 볼륨에 'emptyDir: { medium: Memory, sizeLimit: 2Gi }'를 '/dev/shm'에 마운트하세요.",
+		},
+
+		// ==================== Kubernetes Lifecycle ====================
+		{
+			ErrorClass: "OOMKilled",
+			Language:   "System",
+			Category:   "Application",
+			RootCause:  "OOMKilled",
+			SummaryKo:  "컨테이너의 실제 물리 메모리(RSS) 사용량이 cgroup에 설정된 메모리 한도(Memory Limit)를 초과하여 Linux 커널 OOM Killer에 의해 SIGKILL(137)로 강제 사살되었습니다.",
+			ActionKo:   "1) 파드 스펙의 'resources.limits.memory'를 증설하세요. 2) 언어별 런타임 힙 한도(JVM -Xmx, Node.js --max-old-space-size)가 컨테이너 Limit의 75% 이하인지 확인하세요. 3) 메모리 누수를 프로파일링하세요.",
+			SummaryEn:  "Kubernetes OOMKilled (Exit code 137): container physical memory usage exceeded cgroup limit.",
+			ActionEn:   "1) Increase pod resources.limits.memory. 2) Ensure runtime heap (JVM -Xmx, Node heap) is sized below 75% of limit. 3) Profile memory leaks.",
+			RootCauseChainKo: []string{
+				"컨테이너 프로세스가 객체 생성, 캐시 누적 또는 파일 버퍼링으로 물리 메모리(RSS)를 지속 소비함",
+				"cgroup v1/v2의 memory.max_usage_in_bytes가 설정된 limits.memory 임계치에 도달함",
+				"Linux 커널 OOM Killer가 호출되어 가장 높은 oom_score를 가진 프로세스를 SIGKILL(137)로 즉각 강제 종료함",
+				"Kubelet이 cgroup OOM 이벤트를 감지하고 파드 상태에 'OOMKilled: true'를 기록하고 재시작함",
+			},
+			InferredContextKo: "트래픽 인입 시 동시 요청 처리 메모리가 파드에 부여된 한도를 넘어서 커널에 의해 물리적으로 사살된 장애입니다.",
+			SuggestedFixKo:    "1) 파드 메모리 Limit을 최소 1.5~2배 증설하세요. 2) JVM의 경우 '-XX:MaxRAMPercentage=75.0'을 주어 네이티브 메모리 여유 공간을 확보하세요.",
+		},
+		{
+			ErrorClass: "LivenessProbeFailure",
+			Language:   "System",
+			Category:   "Application",
+			RootCause:  "LivenessProbeFailure",
+			SummaryKo:  "애플리케이션이 Liveness Probe 활성도 검사(/healthz)에 제한 시간(timeoutSeconds) 내에 응답하지 못해 Kubelet에 의해 비정상 판정되어 강제 재기동되었습니다.",
+			ActionKo:   "1) 헬스체크 엔드포인트의 응답 지연 원인(DB 커넥션 병목, CPU 스로틀링, 데드락)을 해결하세요. 2) 'timeoutSeconds' 및 'failureThreshold'를 늘려 일시적 지연 시 재시작을 유예하세요. 3) CPU Limit을 증설하세요.",
+			SummaryEn:  "Kubernetes LivenessProbeFailure: container failed consecutive liveness probes reaching failureThreshold.",
+			ActionEn:   "1) Optimize health check endpoint to avoid heavy external dependencies. 2) Increase timeoutSeconds and failureThreshold. 3) Increase container CPU limit.",
+			RootCauseChainKo: []string{
+				"애플리케이션이 높은 CPU 스로틀링, 이벤트 루프 지연 또는 DB 락 대기로 인해 무응답 상태에 빠짐",
+				"Kubelet의 livenessProbe HTTP/TCP 검사가 timeoutSeconds 동안 응답을 받지 못하고 타임아웃됨",
+				"연속 실패 횟수가 failureThreshold를 초과함에 따라 Kubelet이 컨테이너를 비정상으로 판정하고 프로세스를 종료 및 재기동함",
+			},
+			InferredContextKo: "헬스체크 엔드포인트 내부에서 외부 DB를 동기 조회하다가 DB 지연의 여파로 웹서버 전체가 재시작 루프에 빠진 상황입니다.",
+			SuggestedFixKo:    "1) livenessProbe 엔드포인트를 외부 DB 조회 없이 프로세스 생존 여부만 반환하는 경량 핑(/ping)으로 분리하세요. 2) 'failureThreshold: 5', 'timeoutSeconds: 3'으로 완화하세요.",
+		},
+		{
+			ErrorClass: "GracefulShutdownTimeout",
+			Language:   "System",
+			Category:   "Application",
+			RootCause:  "GracefulShutdownTimeout",
+			SummaryKo:  "배포 롤아웃 또는 노드 축출 중 SIGTERM 신호를 수신했으나, 파드 종료 유예시간(terminationGracePeriodSeconds, 기본 30초) 내에 연결 드레인을 완료하지 못해 SIGKILL(137)로 강제 사살되었습니다.",
+			ActionKo:   "1) 파드 spec.terminationGracePeriodSeconds를 60초~120초로 상향하세요. 2) SIGTERM 신호 핸들러에서 장시간 블로킹되는 작업을 신속히 중단하도록 타임아웃을 적용하세요.",
+			SummaryEn:  "Kubernetes GracefulShutdownTimeout: process failed to terminate within terminationGracePeriodSeconds and was killed by SIGKILL.",
+			ActionEn:   "1) Increase pod spec.terminationGracePeriodSeconds. 2) Set tight timeouts in SIGTERM shutdown handlers to drain connections faster.",
+			RootCauseChainKo: []string{
+				"쿠버네티스가 파드 롤링 업데이트 또는 삭제를 시작하고 프로세스에 SIGTERM(143) 신호를 전송함",
+				"애플리케이션이 진행 중인 배치 작업, WebSocket 커넥션 정리 또는 DB 트랜잭션을 30초 내에 끝내지 못함",
+				"Kubelet의 종료 유예 타이머가 만료되어 Linux 커널이 프로세스를 SIGKILL(137)로 강제 사살함",
+			},
+			InferredContextKo: "신규 버전 배포 시 실행 중이던 고객 요청이나 롱 트랜잭션이 안전하게 종료되지 못하고 강제 사살된 상황입니다.",
+			SuggestedFixKo:    "1) 파드 매니페스트에 'terminationGracePeriodSeconds: 60'을 명시하세요. 2) 스프링 부트의 경우 'server.shutdown=graceful' 및 'spring.lifecycle.timeout-per-shutdown-phase=30s'를 설정하세요.",
+		},
+
+		// ==================== Service Mesh (Envoy / Istio) ====================
+		{
+			ErrorClass: "Envoy_NoHealthyUpstream_503UH",
+			Language:   "Infrastructure",
+			Category:   "Dependency",
+			RootCause:  "EnvoyNoHealthyUpstream",
+			SummaryKo:  "Envoy/Istio 프록시가 요청을 전달할 업스트림 백엔드 파드 중 정상(Ready) 상태인 파드를 찾지 못해 503 UH(No Healthy Upstream)를 반환했습니다.",
+			ActionKo:   "1) 백엔드 파드들이 CrashLoopBackOff 상태이거나 준비성 프로브(Readiness Probe)에 실패하고 있는지 확인하세요. 2) 서비스(Service)의 레이블 셀렉터(selector)와 파드 레이블이 일치하는지 점검하세요.",
+			SummaryEn:  "Envoy 503 UH (No Healthy Upstream): all backend service endpoints failed health checks or are unready.",
+			ActionEn:   "1) Inspect backend pod readiness and restart loops. 2) Verify Service selector matches pod labels.",
+			RootCauseChainKo: []string{
+				"클라이언트 요청이 Envoy Ingress 또는 사이드카 프록시로 라우팅됨",
+				"대상 서비스 클러스터의 모든 백엔드 엔드포인트(Endpoints/EndpointSlice)가 Unready 또는 헬스체크 실패 상태임",
+				"Envoy가 라우팅할 업스트림 호스트를 찾지 못하고 '503 UH (No Healthy Upstream)' 플래그와 함께 연결을 거부함",
+			},
+			InferredContextKo: "백엔드 파드가 배포 직후 준비성 검사를 통과하지 못했거나, 전면 크래시되어 트래픽을 받을 수 있는 파드가 0개인 상태입니다.",
+			SuggestedFixKo:    "1) 'kubectl get endpoints <service_name>'으로 활성 엔드포인트 IP가 존재하는지 확인하세요. 2) 백엔드 파드의 readinessProbe 설정을 점검하세요.",
+		},
+		{
+			ErrorClass: "Envoy_CircuitBreaker_503UO",
+			Language:   "Infrastructure",
+			Category:   "Infrastructure",
+			RootCause:  "EnvoyCircuitBreakerOverflow",
+			SummaryKo:  "백엔드 서비스로 향하는 동시 연결 수 또는 대기 요청 수가 임계치를 초과하여 Envoy 서킷 브레이커가 발동되었습니다 (503 UO: Upstream Overflow).",
+			ActionKo:   "1) Istio DestinationRule의 'maxConnections' 및 'maxPendingRequests' 임계치를 상향 조정하세요. 2) 백엔드 파드를 수평 확장(HPA)하여 과부하를 분산하세요. 3) 백엔드 슬로우 쿼리를 점검하세요.",
+			SummaryEn:  "Envoy 503 UO (Upstream Overflow): destination circuit breaker tripped due to concurrent connection/pending request spike.",
+			ActionEn:   "1) Tune DestinationRule connection pool settings (maxConnections/maxPendingRequests). 2) Scale up backend pods. 3) Resolve backend bottlenecks.",
+			RootCauseChainKo: []string{
+				"백엔드 서비스 대상 인입 트래픽 폭주 또는 백엔드 처리 지연으로 요청 대기열 급증",
+				"Istio DestinationRule에 정의된 서킷 브레이커 임계치(maxPendingRequests 등)에 도달함",
+				"Envoy 프록시가 백엔드 붕괴를 막기 위해 신규 요청을 '503 UO (Upstream Overflow)'로 즉시 차단함",
+			},
+			InferredContextKo: "대규모 마케팅 프로모션이나 이벤트로 인해 순간 트래픽이 서킷브레이커 안전 한도를 초과했습니다.",
+			SuggestedFixKo:    "1) DestinationRule의 'trafficPolicy.connectionPool.http.maxRequestsPerConnection' 및 'maxPendingRequests' 값을 1024 이상으로 증설하세요.",
+		},
+
+		// ==================== Network & TLS & DNS ====================
+		{
+			ErrorClass: "TLSUntrustedCA",
+			Language:   "Configuration",
+			Category:   "Configuration",
+			RootCause:  "TLSUntrustedCA",
+			SummaryKo:  "서버의 TLS/SSL 인증서 발급자(CA)가 클라이언트 신뢰 저장소에 등록되지 않아 HTTPS 핸드셰이크가 실패했습니다 (certificate signed by unknown authority).",
+			ActionKo:   "1) 사설 CA 인증서(Root CA PEM)를 컨테이너 시스템 신뢰 저장소(/etc/ssl/certs)에 마운트하고 'update-ca-certificates'를 실행하세요. 2) 파드 환경변수(SSL_CERT_FILE, NODE_EXTRA_CA_CERTS)를 설정하세요.",
+			SummaryEn:  "TLS Handshake Failure: certificate signed by unknown authority (untrusted private CA).",
+			ActionEn:   "1) Mount corporate root CA into /etc/ssl/certs and run update-ca-certificates. 2) Set SSL_CERT_FILE or NODE_EXTRA_CA_CERTS.",
+			RootCauseChainKo: []string{
+				"애플리케이션이 내부 마이크로서비스 또는 프라이빗 엔드포인트로 HTTPS 요청을 전송함",
+				"서버가 사설 CA(Private/Self-signed CA)로부터 발급된 X.509 인증서를 제시함",
+				"클라이언트 OS/런타임 신뢰 루트 저장소에 해당 CA가 없어 인증서 체인 검증(PKIX path building) 실패",
+			},
+			InferredContextKo: "사내 인트라넷 또는 Istio mTLS 사설 인증서 통신 시 베이스 이미지에 루트 인증서가 없어 발생한 신뢰 체인 결함입니다.",
+			SuggestedFixKo:    "1) ConfigMap에 사설 Root CA를 담아 파드의 '/etc/ssl/certs/custom-ca.pem'에 마운트하고 'SSL_CERT_FILE' 환경변수를 선언하세요.",
+		},
+		{
+			ErrorClass: "CoreDNSLoopDetected",
+			Language:   "Infrastructure",
+			Category:   "Infrastructure",
+			RootCause:  "CoreDNSLoopDetected",
+			SummaryKo:  "CoreDNS가 노드의 /etc/resolv.conf 무한 포워딩 순환 루프를 감지하고 클러스터 DNS 전면 다운을 막기 위해 파드를 긴급 중단했습니다 (Loop detected in at least one of the forward zones).",
+			ActionKo:   "1) 워커 노드의 '/etc/resolv.conf'에 로컬 주소(127.0.0.53, 127.0.0.1)가 네임서버로 등록되어 있는지 확인하고 상위 공용 DNS(8.8.8.8 등)로 변경하세요. 2) kubelet '--resolv-conf' 플래그 경로를 점검하세요.",
+			SummaryEn:  "CoreDNS LoopDetected: CoreDNS detected an infinite forwarding loop with host resolv.conf and halted to prevent storms.",
+			ActionEn:   "1) Remove 127.0.0.53/127.0.0.1 from host /etc/resolv.conf. 2) Configure kubelet --resolv-conf to point to an upstream resolver.",
+			RootCauseChainKo: []string{
+				"워커 노드의 systemd-resolved가 로컬 루프백(127.0.0.53)을 네임서버로 노드 /etc/resolv.conf에 작성함",
+				"CoreDNS 파드가 이 파일을 업스트림 DNS로 참조하여 쿼리를 전달하면서 무한 순환 루프 형성",
+				"CoreDNS의 loop 플러그인이 자체 순환 질의를 감지하고 크래시 루프에 돌입하여 클러스터 전역 DNS가 마비됨",
+			},
+			InferredContextKo: "신규 워커 노드 프로비저닝 시 systemd-resolved 설정이 정리되지 않아 발생한 치명적인 클러스터 네트워킹 장애입니다.",
+			SuggestedFixKo:    "1) 워커 노드에서 'systemd-resolved'의 stub-resolv.conf 대신 실제 업스트림 네임서버가 적힌 '/run/systemd/resolve/resolv.conf'를 kubelet의 '--resolv-conf' 인자로 지정하세요.",
+		},
+
+		// ==================== Nginx & Ingress Enterprise ====================
+		{
+			ErrorClass: "NginxClientBodySizeExceeded",
+			Language:   "Infrastructure",
+			Category:   "Configuration",
+			RootCause:  "NginxClientBodySizeExceeded",
+			SummaryKo:  "클라이언트가 전송한 HTTP 요청 본문(페이로드) 크기가 Nginx 또는 Ingress의 'client_max_body_size' 한도를 초과했습니다 (HTTP 413 Request Entity Too Large).",
+			ActionKo:   "1) Ingress 어노테이션에 'nginx.ingress.kubernetes.io/proxy-body-size: \"50m\"'을 설정하세요. 2) nginx.conf의 'client_max_body_size 50M;' 설정을 증설하세요.",
+			SummaryEn:  "Nginx 413 Request Entity Too Large: payload exceeded client_max_body_size limit.",
+			ActionEn:   "1) Add 'nginx.ingress.kubernetes.io/proxy-body-size: 50m' annotation to Ingress. 2) Increase client_max_body_size in nginx.conf.",
+			RootCauseChainKo: []string{
+				"클라이언트가 대용량 파일 또는 거대한 JSON 요청을 인그레스/웹서버로 전송함",
+				"Nginx 버퍼 검사기에서 요청 Content-Length가 client_max_body_size(기본 1MB)를 초과함을 감지",
+				"Nginx가 백엔드로 프록시하지 않고 즉시 HTTP 413 Request Entity Too Large를 반환함",
+			},
+			InferredContextKo: "사용자 프로필 이미지나 대용량 첨부파일 업로드 시 인그레스의 기본 1MB 제한에 걸려 요청이 사전 거부되었습니다.",
+			SuggestedFixKo:    "1) Ingress 매니페스트 메타데이터에 'annotations: { nginx.ingress.kubernetes.io/proxy-body-size: \"100m\" }'를 적용하세요.",
+		},
+		{
+			ErrorClass: "NginxConfigSyntaxError",
+			Language:   "Infrastructure",
+			Category:   "Configuration",
+			RootCause:  "NginxConfigSyntaxError",
+			SummaryKo:  "nginx.conf 또는 인그레스 커스텀 스니펫(Snippet) 설정의 문법 오류로 인해 Nginx 마스터 프로세스 기동/리로드에 실패했습니다 (nginx: [emerg]).",
+			ActionKo:   "1) Ingress 'configuration-snippet' 또는 ConfigMap의 문법 오탈자(세미콜론 누락, 잘못된 지시어)를 점검하세요. 2) 'nginx -t' 명령으로 설정 파일을 사전 검증하세요.",
+			SummaryEn:  "Nginx configuration syntax test failed: [emerg] in nginx.conf or Ingress snippet.",
+			ActionEn:   "1) Audit Ingress configuration-snippets for missing semicolons. 2) Run 'nginx -t' to validate configuration syntax before reloading.",
+			RootCauseChainKo: []string{
+				"Ingress-Nginx 컨트롤러 또는 웹서버 컨테이너가 기동하며 설정을 파싱함",
+				"nginx.conf 구문 파싱 중 알 수 없는 지시어 또는 닫히지 않은 블록 감지",
+				"Nginx가 [emerg] 오류를 출력하며 프로세스가 기동되지 못하고 비정상 종료됨",
+			},
+			InferredContextKo: "Ingress 리소스의 커스텀 nginx 스니펫 어노테이션에 문법 오류가 포함되어 인그레스 컨트롤러가 리로드에 실패한 상태입니다.",
+			SuggestedFixKo:    "1) 최근 배포된 Ingress 매니페스트의 어노테이션 스니펫에서 문법 오류를 수정하세요.",
+		},
+
+		// ==================== Vault & Cloud Security ====================
+		{
+			ErrorClass: "VaultSealedFailure",
+			Language:   "Configuration",
+			Category:   "Configuration",
+			RootCause:  "VaultSealedFailure",
+			SummaryKo:  "HashiCorp Vault 인스턴스가 봉인(Sealed) 상태로 진입하여 시크릿 조회 요청이 거부되었습니다 (HTTP 503 Vault is sealed).",
+			ActionKo:   "1) Vault Shamir 키 또는 클라우드 KMS(Auto-unseal)를 사용하여 Vault를 언실(Unseal)하세요 ('vault operator unseal'). 2) Vault 파드 재시작 원인 및 KMS 연동 상태를 점검하세요.",
+			SummaryEn:  "HashiCorp Vault is sealed (HTTP 503): master keys not restored into memory.",
+			ActionEn:   "1) Unseal Vault instance using operator unseal or verify cloud KMS auto-unseal. 2) Inspect why Vault restarted.",
+			RootCauseChainKo: []string{
+				"Vault 파드가 노드 이동 또는 재부팅 후 메모리가 초기화된 상태로 시작됨",
+				"마스터 키가 메모리에 복원되지 않아 모든 암호화 엔진이 봉인(Sealed) 상태 유지",
+				"Vault Agent 및 애플리케이션의 시크릿 조회 API가 HTTP 503으로 거절되며 의존 파드 연쇄 크래시",
+			},
+			InferredContextKo: "DB 비밀번호나 API 키를 주입해주는 Vault가 봉인되어 애플리케이션 파드들이 기동 시점에 자격증명을 읽지 못해 크래시되었습니다.",
+			SuggestedFixKo:    "1) 관리자 키로 'vault operator unseal <key>'를 3회 실행하거나, AWS KMS / GCP KMS Auto-unseal 설정을 확인하세요.",
+		},
+		{
+			ErrorClass: "VaultTokenExpired",
+			Language:   "Configuration",
+			Category:   "Security",
+			RootCause:  "VaultTokenExpired",
+			SummaryKo:  "애플리케이션 또는 Vault Agent의 Vault 클라이언트 인증 토큰이 TTL 만료되어 권한이 거부되었습니다 (HTTP 403 permission denied / token expired).",
+			ActionKo:   "1) Kubernetes Auth 역할을 점검하고 'vault agent'의 자동 토큰 갱신(Token Renewal) 데몬을 활성화하세요. 2) Vault ServiceAccount 매핑을 확인하세요.",
+			SummaryEn:  "HashiCorp Vault token expired: permission denied (HTTP 403).",
+			ActionEn:   "1) Verify Kubernetes Auth role configuration. 2) Ensure Vault Agent auto-renews tokens. 3) Inspect ServiceAccount tokens.",
+			RootCauseChainKo: []string{
+				"파드가 Vault 토큰을 사용하여 시크릿 읽기 API를 호출함",
+				"발급된 Vault 토큰의 리스(Lease) TTL이 만료되었거나 갱신 실패",
+				"Vault 서버가 403 Forbidden을 반환하며 애플리케이션 프로세스 중단",
+			},
+			InferredContextKo: "장시간 실행 중인 워커 파드가 Vault 토큰 리뉴얼 루프를 돌리지 않아 24시간 후 토큰이 만료되어 발생했습니다.",
+			SuggestedFixKo:    "1) Vault Agent 사이드카를 주입하여 토큰 라이프사이클을 자동 관리하도록 구성하세요.",
+		},
+
+		// ==================== Cloud SDK (AWS / GCP) ====================
+		{
+			ErrorClass: "AWS_ExpiredTokenException",
+			Language:   "Configuration",
+			Category:   "Security",
+			RootCause:  "AWSExpiredTokenException",
+			SummaryKo:  "AWS IAM 임시 자격 증명(STS AssumeRole 토큰)이 만료되어 AWS API 호출이 거부되었습니다 (The security token included in the request is expired).",
+			ActionKo:   "1) IRSA(IAM Roles for Service Accounts) 또는 EKS Pod Identity 토큰 프로젝션 상태를 점검하세요. 2) AWS SDK가 자격 증명을 주기적으로 새로고침(Refresh)하도록 자격 증명 공급자 체인을 구성하세요.",
+			SummaryEn:  "AWS ExpiredTokenException: security token included in request is expired.",
+			ActionEn:   "1) Inspect IRSA / EKS Pod Identity projected token volume. 2) Ensure AWS SDK uses default credentials chain with auto-refresh.",
+			RootCauseChainKo: []string{
+				"애플리케이션이 AWS S3, SQS 또는 DynamoDB SDK 호출을 실행함",
+				"환경변수 또는 파일(/var/run/secrets/eks.amazonaws.com/serviceaccount/token)의 STS 세션 토큰 만료",
+				"AWS 엔드포인트가 ExpiredTokenException을 반환하며 API 요청 거절",
+			},
+			InferredContextKo: "EKS 파드에서 장시간 실행되는 프로세스가 STS 토큰을 메모리에 캐싱하고 갱신하지 않아 발생한 클라우드 인증 만료입니다.",
+			SuggestedFixKo:    "1) AWS SDK 생성 시 하드코딩된 세션 토큰 대신 'DefaultAWSCredentialsProviderChain'을 사용하세요.",
+		},
+	}
+
+	RegisterCatalogEntries(entries)
+}

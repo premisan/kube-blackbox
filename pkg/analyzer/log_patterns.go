@@ -1154,8 +1154,9 @@ func matchLogRule(rule *LogRule, processedLogs, tailSnippet string) *LogAnalysis
 			culprit = rule.ExtractCulprit(processedLogs)
 		}
 
+		clonedRule := *rule
 		return &LogAnalysisResult{
-			MatchedRule:       rule,
+			MatchedRule:       &clonedRule,
 			MatchedPattern:    rule.Name,
 			Category:          rule.Category,
 			ErrorClass:        errClass,
@@ -1244,6 +1245,9 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 		}
 		if dbDriverDeep.SuggestedFixKo != "" {
 			res.RecommendedAction = dbDriverDeep.SuggestedFixKo
+			if res.MatchedRule != nil {
+				res.MatchedRule.RecommendedAction = dbDriverDeep.SuggestedFixKo
+			}
 		}
 
 		// Preserve exact culprit code (file & line) if language-specific stack trace exists
@@ -1318,6 +1322,9 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 			}
 			if pyDeep.SuggestedFixKo != "" {
 				res.RecommendedAction = pyDeep.SuggestedFixKo
+				if res.MatchedRule != nil {
+					res.MatchedRule.RecommendedAction = pyDeep.SuggestedFixKo
+				}
 			}
 			return res
 		}
@@ -1371,6 +1378,9 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 			}
 			if javaDeep.SuggestedFixKo != "" {
 				res.RecommendedAction = javaDeep.SuggestedFixKo
+				if res.MatchedRule != nil {
+					res.MatchedRule.RecommendedAction = javaDeep.SuggestedFixKo
+				}
 			}
 			return res
 		}
@@ -1451,6 +1461,9 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 			}
 			if nodeDeep.SuggestedFixKo != "" {
 				res.RecommendedAction = nodeDeep.SuggestedFixKo
+				if res.MatchedRule != nil {
+					res.MatchedRule.RecommendedAction = nodeDeep.SuggestedFixKo
+				}
 			}
 			return res
 		}
@@ -1497,6 +1510,9 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 			}
 			if phpDeep.SuggestedFixKo != "" {
 				res.RecommendedAction = phpDeep.SuggestedFixKo
+				if res.MatchedRule != nil {
+					res.MatchedRule.RecommendedAction = phpDeep.SuggestedFixKo
+				}
 			}
 			return res
 		}
@@ -1527,6 +1543,9 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 		}
 		if meshDeep.SuggestedFixKo != "" {
 			res.RecommendedAction = meshDeep.SuggestedFixKo
+			if res.MatchedRule != nil {
+				res.MatchedRule.RecommendedAction = meshDeep.SuggestedFixKo
+			}
 		}
 		return res
 	}

@@ -15,12 +15,12 @@ spec:
         - |
           echo "[INFO] Running BigQuery export job for partition-enforced audit table..."
           cat << 'EOF' >&2
-Traceback (most recent call last):
-  File "/app/export_audit_logs.py", line 42, in run_export
-    query_job.result()
-  File "/usr/local/lib/python3.11/site-packages/google/cloud/bigquery/job/query.py", line 1499, in result
-    do_get_result()
-google.cloud.exceptions.BadRequest: 400 Cannot query over table 'enterprise-prod.security.audit_logs' without a filter over column(s) 'event_timestamp' that can be used for partition elimination
-EOF
+          Traceback (most recent call last):
+            File "/app/export_audit_logs.py", line 42, in run_export
+              query_job.result()
+            File "/usr/local/lib/python3.11/site-packages/google/cloud/bigquery/job/query.py", line 1499, in result
+              do_get_result()
+          google.cloud.exceptions.BadRequest: 400 Cannot query over table 'enterprise-prod.security.audit_logs' without a filter over column(s) 'event_timestamp' that can be used for partition elimination
+          EOF
           echo "[FATAL] BigQuery query rejected: requirePartitionFilter is enabled on table and query omitted partition filter." >&2
           exit 1
