@@ -1289,6 +1289,20 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 			} else if pyDeep.ExceptionClass != "" {
 				res.ErrorClass = pyDeep.ExceptionClass
 			}
+			if pyDeep.ExceptionClass != "" {
+				if semEntry, found := knowledge.LookupSemanticCatalog("Python", pyDeep.ExceptionClass); found {
+					res.MatchedRule.RootCause = semEntry.RootCause
+					locStr := ""
+					if res.ErrorLocation != "" {
+						locStr = fmt.Sprintf(" (%s)", res.ErrorLocation)
+					}
+					if res.Summary == "" || strings.HasPrefix(res.Summary, "Python unhandled exception") {
+						res.Summary = semEntry.SummaryKo + locStr
+					}
+					res.MatchedRule.RecommendedAction = semEntry.ActionKo
+					res.RecommendedAction = semEntry.ActionKo
+				}
+			}
 			if pyDeep.CulpritCode != nil {
 				res.CulpritCode = pyDeep.CulpritCode
 				res.ErrorLocation = fmt.Sprintf("%s:%d", pyDeep.CulpritCode.File, pyDeep.CulpritCode.Line)
@@ -1333,6 +1347,16 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 					res.MatchedRule.RootCause = "LazyInitializationException"
 				} else if strings.Contains(javaDeep.RootExceptionClass, "TransientPropertyValueException") {
 					res.MatchedRule.RootCause = "TransientPropertyValueException"
+				}
+			}
+			if javaDeep.RootExceptionClass != "" {
+				if semEntry, found := knowledge.LookupSemanticCatalog("Java", javaDeep.RootExceptionClass); found {
+					res.MatchedRule.RootCause = semEntry.RootCause
+					if res.Summary == "" || strings.HasPrefix(res.Summary, "Java ") || strings.HasPrefix(res.Summary, "JVM ") {
+						res.Summary = semEntry.SummaryKo
+					}
+					res.MatchedRule.RecommendedAction = semEntry.ActionKo
+					res.RecommendedAction = semEntry.ActionKo
 				}
 			}
 			if strings.Contains(processedLogs, "form a cycle:") {
@@ -1735,6 +1759,64 @@ func enrichWithDeepAnalysis(res *LogAnalysisResult, processedLogs string, tailSn
 		}
 		if netTLSDeep.SuggestedFixKo != "" {
 			res.RecommendedAction = netTLSDeep.SuggestedFixKo
+		}
+		return res
+	}
+
+	// 12. Sentry-Grade Universal Crash & Semantic Catalog Engine
+	// If no specific hardcoded pattern matched (fallbackRes) or if error location/culprit code is missing,
+	// run the pattern-free universal stack trace parser. It pinpoints In-App user code,
+	// unwraps chained exceptions, and synthesizes LLM-grade diagnosis from the embedded semantic catalog.
+	if uCrash := knowledge.AnalyzeUniversalCrash(processedLogs); uCrash != nil {
+		rootCause, summaryKo, actionKo := knowledge.SynthesizeDiagnosisFromUniversal(uCrash, "ko")
+		category := "Application"
+		if uCrash.Language == "System" || strings.Contains(uCrash.ErrorClass, "Connection") || strings.Contains(uCrash.ErrorClass, "Timeout") {
+			category = "Dependency"
+		}
+
+		focusedSnippet := uCrash.FocusedSnippet
+		if focusedSnippet == "" {
+			focusedSnippet = tailSnippet
+		}
+
+		if res == nil || res.MatchedRule == nil {
+			res = &LogAnalysisResult{
+				MatchedRule: &LogRule{
+					Name:              "Universal_" + uCrash.Language + "_" + uCrash.ErrorClass,
+					Category:          category,
+					RootCause:         rootCause,
+					Confidence:        "High",
+					RecommendedAction: actionKo,
+				},
+				MatchedPattern:    "UniversalCrashAnalysis",
+				Category:          category,
+				Snippet:           focusedSnippet,
+				Summary:           summaryKo,
+				RecommendedAction: actionKo,
+			}
+		} else {
+			if res.MatchedRule.RootCause == "ApplicationRuntimeError" || res.MatchedRule.RootCause == "" {
+				res.MatchedRule.RootCause = rootCause
+			}
+		}
+
+		if res.ErrorClass == "" && uCrash.ErrorClass != "" {
+			res.ErrorClass = uCrash.ErrorClass
+		}
+		if res.ErrorLocation == "" && uCrash.ErrorLocation != "" {
+			res.ErrorLocation = uCrash.ErrorLocation
+		}
+		if res.CulpritCode == nil && uCrash.CulpritCode != nil {
+			res.CulpritCode = uCrash.CulpritCode
+		}
+		if res.Summary == "" {
+			res.Summary = summaryKo
+		}
+		if res.RecommendedAction == "" {
+			res.RecommendedAction = actionKo
+		}
+		if uCrash.FocusedSnippet != "" {
+			res.Snippet = uCrash.FocusedSnippet
 		}
 		return res
 	}

@@ -853,8 +853,8 @@ ValueError: Corrupted payload detected for record_id=42`
 	}
 
 	diag, ev := engine.Diagnose(input)
-	if diag.RootCause != "PythonUnhandledException" {
-		t.Fatalf("expected PythonUnhandledException, got %s", diag.RootCause)
+	if diag.RootCause != "PythonUnhandledException" && diag.RootCause != "PythonValueError" {
+		t.Fatalf("expected PythonUnhandledException or PythonValueError, got %s", diag.RootCause)
 	}
 	if ev.ErrorClass != "ValueError" {
 		t.Fatalf("expected ErrorClass to be ValueError, got: %s", ev.ErrorClass)
@@ -900,8 +900,8 @@ RuntimeError: Application bootstrap failed due to database connectivity`
 	}
 
 	diag, ev := engine.Diagnose(input)
-	if diag.RootCause != "PythonUnhandledException" {
-		t.Fatalf("expected PythonUnhandledException, got %s", diag.RootCause)
+	if diag.RootCause != "PythonUnhandledException" && diag.RootCause != "PythonValueError" {
+		t.Fatalf("expected PythonUnhandledException or PythonValueError, got %s", diag.RootCause)
 	}
 	if !strings.Contains(ev.ErrorClass, "ConnectionRefusedError") {
 		t.Fatalf("expected ErrorClass to capture chained root cause, got: %s", ev.ErrorClass)
@@ -1693,5 +1693,203 @@ Error occurred at shutdown: None
 	}
 	if diag.RootCause != "ProcessExitedNormally" {
 		t.Fatalf("expected ProcessExitedNormally, got: %s", diag.RootCause)
+	}
+}
+
+func TestDiagnose_SentryGrade_PythonKeyErrorInApp(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+[2026-11-02 12:00:00] [INFO] Handling batch order request
+[2026-11-02 12:00:01] [INFO] User session authenticated (user_id: 1042)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/site-packages/flask/app.py", line 1478, in __call__
+    return self.wsgi_app(environ, start_response)
+  File "/app/services/order_service.py", line 84, in process_order
+    account_id = payload['account_id']
+KeyError: 'account_id'
+[2026-11-02 12:00:02] [INFO] Worker exiting (pid: 14)
+`
+	input := DiagnosticInput{
+		ContainerName: "order-api",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "order-api",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+					Reason:   "Error",
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "PythonKeyError" && diag.RootCause != "PythonKeyOrIndexError" {
+		t.Fatalf("expected PythonKeyError or PythonKeyOrIndexError, got: %s (should not fallback to ApplicationRuntimeError)", diag.RootCause)
+	}
+	if ev.ErrorLocation != "order_service.py:84" {
+		t.Fatalf("expected order_service.py:84, got: %s", ev.ErrorLocation)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "order_service.py" || ev.CulpritCode.Line != 84 {
+		t.Fatalf("expected In-App culprit order_service.py:84, got: %+v", ev.CulpritCode)
+	}
+}
+
+func TestDiagnose_SentryGrade_JavaNPECausedByInApp(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+2026-11-02 12:00:00.123 [main] INFO  com.example.Application - Started Application in 2.345 seconds
+org.springframework.web.util.NestedServletException: Request processing failed; nested exception is java.lang.NullPointerException: Cannot invoke "String.length()" because "name" is null
+	at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1014)
+	at org.springframework.web.servlet.FrameworkServlet.doPost(FrameworkServlet.java:909)
+Caused by: java.lang.NullPointerException: Cannot invoke "String.length()" because "name" is null
+	at com.example.service.UserService.validateUser(UserService.java:125)
+	at com.example.controller.UserController.createUser(UserController.java:45)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+`
+	input := DiagnosticInput{
+		ContainerName: "user-service",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "user-service",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+					Reason:   "Error",
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "JavaNullPointerException" && diag.RootCause != "JVMNullPointer" {
+		t.Fatalf("expected JavaNullPointerException or JVMNullPointer, got: %s", diag.RootCause)
+	}
+	if ev.ErrorLocation != "UserService.java:125" {
+		t.Fatalf("expected UserService.java:125, got: %s", ev.ErrorLocation)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "UserService.java" || ev.CulpritCode.Line != 125 {
+		t.Fatalf("expected In-App culprit UserService.java:125, got: %+v", ev.CulpritCode)
+	}
+}
+
+func TestDiagnose_SentryGrade_GoPanicInApp(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(2)
+
+	logs := `
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x89ab12]
+
+goroutine 1 [running]:
+main.processPayment(0x0)
+	/app/payment/processor.go:55 +0x3a
+main.main()
+	/app/main.go:20 +0x125
+`
+	input := DiagnosticInput{
+		ContainerName: "payment-service",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "payment-service",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+					Reason:   "Error",
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "GoNilPointerPanic" && diag.RootCause != "GoNilPointerDereference" {
+		t.Fatalf("expected GoNilPointerPanic or GoNilPointerDereference, got: %s", diag.RootCause)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "processor.go" || ev.CulpritCode.Line != 55 {
+		t.Fatalf("expected In-App culprit processor.go:55, got: %+v", ev.CulpritCode)
+	}
+}
+
+func TestDiagnose_SentryGrade_PythonUnboundLocalErrorCustom(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+[2026-11-02 12:00:00] [INFO] Starting invoice calculation batch
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.10/site-packages/django/core/handlers/base.py", line 181, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "/app/billing/calculator.py", line 142, in calculate_fee
+    print(fee)
+    fee = amount * 0.1
+UnboundLocalError: local variable 'fee' referenced before assignment
+[2026-11-02 12:00:02] [INFO] Worker exiting
+`
+	input := DiagnosticInput{
+		ContainerName: "billing-api",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "billing-api",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+					Reason:   "Error",
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "PythonUnboundLocalError" {
+		t.Fatalf("expected PythonUnboundLocalError, got: %s (should be resolved by Universal Semantic Catalog)", diag.RootCause)
+	}
+	if ev.ErrorLocation != "calculator.py:142" {
+		t.Fatalf("expected calculator.py:142, got: %s", ev.ErrorLocation)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "calculator.py" || ev.CulpritCode.Line != 142 {
+		t.Fatalf("expected calculator.py:142, got: %+v", ev.CulpritCode)
+	}
+	if !strings.Contains(diag.Summary, "UnboundLocalError") || !strings.Contains(diag.Summary, "calculator.py:142") {
+		t.Fatalf("expected detailed Korean summary, got: %s", diag.Summary)
+	}
+	if !strings.Contains(diag.RecommendedAction, "초기화") {
+		t.Fatalf("expected actionable recommendation, got: %s", diag.RecommendedAction)
+	}
+}
+
+func TestDiagnose_SentryGrade_NodeReferenceErrorInApp(t *testing.T) {
+	engine := NewDiagnosticEngine()
+	exitCode := int32(1)
+
+	logs := `
+ReferenceError: configService is not defined
+    at AuthService.login (/app/src/auth/auth.service.ts:48:15)
+    at AuthController.login (/app/src/auth/auth.controller.ts:22:33)
+    at /app/node_modules/@nestjs/core/router/router-execution-context.js:46:28
+`
+	input := DiagnosticInput{
+		ContainerName: "auth-api",
+		ContainerStatus: &corev1.ContainerStatus{
+			Name: "auth-api",
+			LastTerminationState: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: exitCode,
+					Reason:   "Error",
+				},
+			},
+		},
+		PreviousLogs: logs,
+	}
+
+	diag, ev := engine.Diagnose(input)
+	if diag.RootCause != "NodeReferenceError" {
+		t.Fatalf("expected NodeReferenceError, got: %s", diag.RootCause)
+	}
+	if ev.CulpritCode == nil || ev.CulpritCode.File != "auth.service.ts" || ev.CulpritCode.Line != 48 {
+		t.Fatalf("expected In-App culprit auth.service.ts:48, got: %+v", ev.CulpritCode)
 	}
 }

@@ -1509,9 +1509,19 @@ var i18nRegistry = map[string]map[string]LocalizedText{
 	},
 }
 
+func hasHangul(s string) bool {
+	for _, r := range s {
+		if r >= 0xAC00 && r <= 0xD7A3 {
+			return true
+		}
+	}
+	return false
+}
+
 // Localize resolves localized summary and action for a root cause.
 func Localize(rootCause, lang, defaultSummary, defaultAction, detail string) (string, string) {
-	if defaultSummary != "" && (strings.HasPrefix(defaultSummary, "[") ||
+	if defaultSummary != "" && (hasHangul(defaultSummary) || strings.HasPrefix(rootCause, "Universal_") ||
+		strings.HasPrefix(defaultSummary, "[") ||
 		strings.HasPrefix(defaultSummary, "PHP") ||
 		strings.HasPrefix(defaultSummary, "MySQL") ||
 		strings.HasPrefix(defaultSummary, "PostgreSQL") ||
